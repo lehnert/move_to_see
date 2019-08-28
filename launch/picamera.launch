@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<launch>
+
+  <arg name="camera_index" default="0" />
+  <arg name="camera_topic" default="/pi_camera_0" />
+  <arg name="publish_image" default="True" />
+  <arg name="detect_objects" default="True" />
+  <arg name="publish_segment_image" default="True" />
+
+  <arg name="hue_low" default="0"/>
+  <arg name="hue_high" default="25"/>
+  <arg name="sat_low" default="90"/>
+  <arg name="sat_high" default="255"/>
+  <arg name="val_low" default="0"/>
+  <arg name="val_high" default="255"/>
+
+  <node name="pi_camera_node_$(arg camera_index)" pkg="harvey_move_to_see" type="picam_zero_capture.py" output="screen" cwd="node">
+
+    <param name="camera_index" value="$(arg camera_index)"/>
+    <param name="camera_topic" value="$(arg camera_topic)"/>
+    <param name="publish_image" value="$(arg publish_image)"/>
+    <param name="detect_objects" value="$(arg detect_objects)"/>
+    <param name="publish_segment_image" value="$(arg publish_segment_image)"/>
+
+    <param name="hsv_hue_low" value="$(arg hue_low)"/>
+    <param name="hsv_hue_high" value="$(arg hue_high)"/>
+    <param name="hsv_val_low" value="$(arg val_low)"/>
+    <param name="hsv_val_high" value="$(arg val_high)"/>
+    <param name="hsv_sat_low" value="$(arg sat_low)"/>
+    <param name="hsv_sat_high" value="$(arg sat_high)"/>
+
+  </node>
+
+
+</launch>

@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+
+import RPi.GPIO as gpio
+from picamera import PiCamera
+import os
+import cv2
+import numpy as np
+import time
+
+
+import rospy
+from harvey_msgs.msg import piCamArray, piCamObject
+
+class piCameraMaster:
+
+    def __init__(self,nCameras):
+
+        self.nCameras = nCameras
+
+        self.publisher = rospy.Publisher("pi_camera_array", piCamArray, queue_size=100)
+        self.subscribers = []
+
+        gpio.setmode(gpio.BOARD)
+
+
+        #create nCamera amount of subcribers
+        self.camera_data = []
+        for i in range(0,self.nCameras):
+            print "Initialising GPIO lines: " + str(i)
+            gpio.setup(i+3, gpio.OUT)
+            gpio.output(i+3, False)
+            self.camera_data.append(piCamObject())
+            #create subscriber and use i to inform callback which camera topic is subscribed
+            self.subscribers.append(rospy.Subscriber("pi_camera_"+str(i),piCamObject,self.camera_callback,i))
+
+        #create empty camera array msg with empty list of camera data objects
+        self.piCamArray_msg = piCamArray()
+        self.piCamArray_msg.nCameras = nCameras
+        self.piCamArray_msg.piCamObjects = self.camera_data
+
+    def camera_callback(self,data,camera_number):
+        print "Received camera data from camera: " + str(camera_number)
+        
+self.piCamArray_msg.piCamObjects[camera_number] = data
+
+
+
+    def run(self):
+
+        print "Running camera array master"
+
+        r1 = rospy.Rate(100) 
+        r2 = rospy.Rate(100)
+        while not rospy.is_shutdown():
+            #reset camera array data msg
+            #need to trigger gpio lines
+            for i in range(0,self.nCameras):
+                gpio.output(i+3, True)
+                #wait for subscriber callbacks to receive data for each camera_data
+                #then publish collated camera array data
+            self.publisher.publish(self.piCamArray_msg)
+
+            #wait for first sleep to reset GPIO pins
+            r1.sleep()
+            for i in range(0,self.nCameras):
+                gpio.output(i+3, False)
+
+            #wait for second sleep to produce rate/2 loop speed
+            r2.sleep()
+
+
+
+
+if __name__ == "__main__":
+
+    print "creating pi camera array master node"
+
+    nCameras = 1
+
+    rospy.init_node('pi_camera_array_master')
+
+    camera_array = piCameraMaster(nCameras)
+    camera_array.run()

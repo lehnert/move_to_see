@@ -1,0 +1,54 @@
+<?xml version="1.0" ?>
+<launch>
+
+  <arg name="number_of_cameras" default="1" />
+  <arg name="hue_low" default="0"/>
+  <arg name="hue_high" default="28"/>
+  <arg name="sat_low" default="120"/>
+  <arg name="sat_high" default="255"/>
+  <arg name="val_low" default="50"/>
+  <arg name="val_high" default="255"/>
+
+
+  <!--arg name="hue_low" default="0"/>
+  <arg name="hue_high" default="20"/>
+  <arg name="sat_low" default="120"/>
+  <arg name="sat_high" default="255"/>
+  <arg name="val_low" default="50"/>
+  <arg name="val_high" default="255"-->
+
+  <arg name="detect_objects" default="True"/>
+  <arg name="publish_images" default="True"/>
+  <arg name="publish_segment_image" default="True"/>
+
+  <!-- <include file="$(find harvey_move_to_see)/launch/picamera_frames.launch"/> -->
+
+  <!-- <node machine="pi_camera_master" name="pi_camera_master_node" pkg="harvey_move_to_see" type="picam_array_master_node.py" output="screen" cwd="node">
+    <param name="number_of_cameras" value="$(arg number_of_cameras)"/>
+  </node> -->
+
+  <!-- <machine name="pi_camera_master" address="192.168.1.5" user="pi" password="clusterhat"
+    env-loader="~/picamera_ws/src/move_to_see/launch/picamera_env.sh"
+    timeout="30.0" /> -->
+
+  <machine name="pi_camera_0" address="192.168.1.5" user="pi" password="clusterhat"
+    env-loader="~/picamera_ws/src/move_to_see_pi/move_to_see/launch/picamera_env.sh"
+    timeout="30.0" />
+
+  <node machine="pi_camera_0" name="pi_camera_node_0" pkg="move_to_see" type="picam_zero_capture_v2.py" output="screen" cwd="node">
+    <param name="camera_index" value="0"/>
+    <param name="camera_topic" value="/pi_camera_0"/>
+    <param name="detect_objects" value="$(arg detect_objects)"/>
+    <param name="publish_images" value="$(arg publish_images)"/>
+    <param name="publish_segment_image" value="$(arg publish_segment_image)"/>
+
+    <param name="hsv_hue_low" value="$(arg hue_low)"/>
+    <param name="hsv_hue_high" value="$(arg hue_high)"/>
+    <param name="hsv_val_low" value="$(arg val_low)"/>
+    <param name="hsv_val_high" value="$(arg val_high)"/>
+    <param name="hsv_sat_low" value="$(arg sat_low)"/>
+    <param name="hsv_sat_high" value="$(arg sat_high)"/>
+
+  </node>
+
+</launch>

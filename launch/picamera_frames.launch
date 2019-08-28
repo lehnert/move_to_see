@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<launch>
+    <arg name="base_camera" default="pi_camera" />
+    <arg name="camera" default="pi_camera" />
+    <arg name="offset_x" default="0.027" />
+    <arg name="neg_offset_x" default="-0.027" />
+    <arg name="offset_y" default="0.027" />
+    <arg name="neg_offset_y" default="-0.027" />
+    <arg name="offset_z" default="0.015" />
+    <arg name="neg_offset_z" default="-0.015" />
+    <arg name="offset_2z" default="0.03" />
+    <arg name="neg_offset_2z" default="-0.03" />
+
+    <arg name="pi/2" value="1.5707963267948966" />
+    <arg name="optical_rotate" value="0 0 0 -$(arg pi/2) 0 -$(arg pi/2)" />
+
+
+<!-- TOP ROW -->
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link0"
+        args="$(arg neg_offset_x) $(arg offset_y) $(arg offset_2z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_6 100" />
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link1"
+        args="0 $(arg offset_y) $(arg offset_z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_3 100" />
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link2"
+        args="$(arg offset_x) $(arg offset_x) $(arg offset_2z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_0 100" />
+
+<!--Middle Row  -->
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link3"
+        args="$(arg neg_offset_x) 0 $(arg offset_z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_7 100" />
+
+    <!-- reference frame is 5th camera or (4 indexed at 0) -->
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link4"
+        args="0 0 0 0 0 0 /$(arg base_camera)_link /$(arg camera)_4 100" />
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link5"
+        args="$(arg offset_x) 0 $(arg offset_z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_1 100" />
+
+    <!-- Bottom row -->
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link6"
+        args="$(arg neg_offset_x) $(arg neg_offset_y) $(arg offset_2z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_8 100" />
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link7"
+        args="0 $(arg neg_offset_y) $(arg offset_z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_5 100" />
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg camera)_base_link8"
+        args="$(arg offset_x) $(arg neg_offset_x) $(arg offset_2z) 0 0 0 /$(arg base_camera)_link /$(arg camera)_2 100" />
+
+</launch>
