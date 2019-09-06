@@ -1,0 +1,45 @@
+<launch>
+
+    <arg name="logger" default="false"/>
+    <arg name="ur5" default="true"/>
+    <arg name="smach" default="true"/>
+    <arg name="lift" default="true"/>
+    <arg name="moveit" default="true"/>
+    <arg name="detection" default="true"/>
+
+    <group if="$(arg ur5)">
+      <include file="$(find ur_modern_driver)/launch/ur5_bringup.launch">
+        <arg name="robot_ip" value="192.168.1.200"/>
+        <!-- <arg name="reverse_port" value="REVERSE_PORT"/> -->
+        <arg name="limited" value="true"/>
+      </include>
+    </group>
+
+    <group if="$(arg lift)">
+      <include file="$(find harvey_lift_control)/launch/harvey_lift_hardware.launch"/>
+    </group>
+
+    <group if="$(arg moveit)">
+      <include file="$(find harvey_2_moveit_config)/launch/harvey_moveit.launch">
+        <arg name="rviz_gui" value="false"/>
+      </include>
+    </group>
+
+    <!-- <group if="$(arg detection)">
+      <include file="$(find harvey_detection)/launch/harvey_detection.launch">
+        <arg name="deep_peduncle" value="True"/>
+        <arg name="driver" value="True"/>
+      </include>
+    </group> -->
+
+    <!-- <group if="$(arg smach)">
+      <rosparam command="load" file="$(find harvey_smach)/parameters/global.yaml"/>
+      <node name="smach" pkg="harvey_smach" type="CROP_HARVESTING_DEEP_PEDUNCLE_STATE_MACHINE.py" output="screen" cwd="node"/>
+    </group> -->
+
+    <group if="$(arg logger)">
+        <include file="$(find harvey_logger)/launch/auto_logger.launch"/>
+    </group>
+
+
+</launch>

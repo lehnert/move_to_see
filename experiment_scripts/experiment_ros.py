@@ -29,7 +29,7 @@
 #OLD VREP hue, sat, L parameters = 0.00, 0.5, 1.0
 #OLD VREP tolerage = 0.1, 0.2, 1.0
 
-from ros_move_to_see_interfaces import move_to_see
+from ros_move_to_see import move_to_see
 import time
 import numpy as np
 import math

@@ -53,16 +53,18 @@ import sensor_msgs
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PoseArray
-from harvey_msgs.msg import piCamArray, piCamObject
-from harvey_msgs.msg import moveToSee
+from move_to_see_msgs.msg import piCamArray, piCamObject
+from move_to_see_msgs.msg import moveToSee
 #import pylab as plb
 
 import cv2
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
+import message_filters
 from cv_bridge import CvBridge, CvBridgeError
-
 import tf2_geometry_msgs
+import threading
+import rospy
 
 class ros_interface:
 
@@ -71,6 +73,8 @@ class ros_interface:
         self.type = "ROS"
 
         self.bridge = CvBridge()
+
+        self.lock = threading.Lock()
 
         # self.move_group = move_group
         self.min_path_completion = 0.5
@@ -90,46 +94,59 @@ class ros_interface:
         self.move_to_see_msg.header.seq = 0
         self.move_to_see_msg.header.frame_id = "/move_to_see"
 
+        hsv_hue_low = rospy.get_param("~hsv_hue_low",0)
+        hsv_hue_high = rospy.get_param("~hsv_hue_high",28)
+        hsv_sat_low = rospy.get_param("~hsv_sat_low",120)
+        hsv_sat_high = rospy.get_param("~hsv_sat_high",255)
+        hsv_val_low = rospy.get_param("~hsv_val_low",50)
+        hsv_val_high = rospy.get_param("~hsv_val_high",255)
+
+        hsv_thresholds_low = np.array([hsv_hue_low, hsv_sat_low, hsv_val_low])
+        hsv_thresholds_high = np.array([hsv_hue_high, hsv_sat_high, hsv_val_high])
+
+        self.lower_red = np.copy(hsv_thresholds_low)
+        self.upper_red =  np.copy(hsv_thresholds_high)
+        #
+        self.lower_red2 =  np.copy(hsv_thresholds_low)
+        self.lower_red2[0] = 180 - self.upper_red[0]
+        self.upper_red2 = np.array([180,255,255])
+
         self.fixed_frame = "/pi_camera_link"
 
-        self.cv_image = []
+        self.cv_image_array = []
+        self.got_image_array = []
 
         #self.images = []
         for i in range(0,self.nCameras):
-            self.cv_image.append(0)
-
-        # self.pixel_sizes = np.zeros((number_of_cameras,))
-        # self.pixel_sizes_filtered = np.zeros((number_of_cameras,))
-        # self.blob_centres = np.zeros((number_of_cameras,2))
+            self.cv_image_array.append(0)
+            self.got_image_array.append(0)
 
         self.pixel_sizes = self.init_list_of_objects(number_of_cameras, 0)
         self.pixel_sizes_filtered = self.init_list_of_objects(number_of_cameras, 0)
         self.blob_centres = self.init_list_of_objects(number_of_cameras, 0)
-        # self.pixel_sizes_filtered = [0.0]*number_of_cameras
-        # self.blob_centres = [(0.0,0.0)]*number_of_cameras
 
         self.window_size = 5
-        # self.pixel_sizes_buffer = [[0.0]*self.window_size]*number_of_cameras
         self.pixel_sizes_buffer = self.init_list_of_objects(number_of_cameras,self.window_size)
-        # self.blob_centres = [[(0.0,0.0), (0.0,0.0), (0.0,0.0), (0.0,0.0), (0.0,0.0)]]*number_of_cameras
 
-        self.camarray_sub = rospy.Subscriber("/pi_camera_array",piCamArray,self.piCameraCallback)
+        self.image_sub_array = []
+        for i in range(0, self.nCameras):
+            self.image_sub_array.append(message_filters.Subscriber("/pi_camera_"+str(i)+"/rgb_image", Image))
+
+        # self.ts = message_filters.TimeSynchronizer(self.image_sub_array, 10)
+        # self.ts.registerCallback(self.imageArrayCallback)
+        self.ats = message_filters.ApproximateTimeSynchronizer(self.image_sub_array, queue_size=1, slop=0.4)
+        self.ats.registerCallback(self.imageArrayCallback)
+
 
         self.move_pose_service_name = '/harvey_robot/move_harvey_pose_array'
-
         self.get_jacobian_service_name = '/harvey_robot/get_jacobian'
-
         self.get_manipulability_service_name = '/harvey_robot/get_manipulability'
 
-        #self.cv_image = [None]*self.nCameras
-        #self.cv_image = []
-
-        #self.move_pose_service_name = '/harvey_robot/move_harvey_pose'
 
         rospy.loginfo('Waiting for service %s to come online ...' % self.move_pose_service_name)
 
         self.move_to_named_service_name = '/harvey_robot/move_harvey_named'
-        rospy.loginfo('Waiting for service %s to come online ...' % self.move_pose_service_name)
+        rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
 
         try:
             rospy.wait_for_service(self.move_pose_service_name)
@@ -140,17 +157,17 @@ class ros_interface:
             self.move_named_service = rospy.ServiceProxy(self.move_to_named_service_name,
                                         harvey_msgs.srv.move_harvey_named)
 
-            rospy.wait_for_service(self.get_jacobian_service_name)
-            self.get_jacobian_service = rospy.ServiceProxy(self.get_jacobian_service_name,
-                                        harvey_msgs.srv.getJacobian)
+            #rospy.wait_for_service(self.get_jacobian_service_name)
+            #self.get_jacobian_service = rospy.ServiceProxy(self.get_jacobian_service_name,
+            #                            harvey_msgs.srv.getJacobian)
 
-            rospy.wait_for_service(self.get_manipulability_service_name)
-            self.get_manipulability_service = rospy.ServiceProxy(self.get_manipulability_service_name,
-                                        harvey_msgs.srv.getManipulability)
+            #rospy.wait_for_service(self.get_manipulability_service_name)
+            #self.get_manipulability_service = rospy.ServiceProxy(self.get_manipulability_service_name,
+            #                            harvey_msgs.srv.getManipulability)
 
-            self.image_sub = []
-            for i in range(0,self.nCameras):
-                self.image_sub.append(rospy.Subscriber("/pi_camera_"+str(i)+"/rgb_segmented_image",Image,self.image_callback, i))
+            #self.image_sub = []
+            #for i in range(0,self.nCameras):
+            #    self.image_sub.append(rospy.Subscriber("/pi_camera_"+str(i)+"/rgb_segmented_image",Image,self.image_callback, i))
 
         except:
             rospy.logerr('Service %s not available. Restart and try again.' % service_name)
@@ -192,7 +209,7 @@ class ros_interface:
             #print "Waiting for RGB image"
 
         #self.image_sub.unregister()
-        return self.cv_image[i]
+        return self.cv_image_array[i]
 
 
 
@@ -206,7 +223,7 @@ class ros_interface:
             #print "Waiting for RGB image"
 
         self.image_sub.unregister()
-        return self.cv_image
+        return self.cv_image_array[4]
 
         #self.camarray_sub = rospy.Subscriber("/pi_camera_4/rgb_image",piCamArray,self.image_callback);
 
@@ -216,11 +233,37 @@ class ros_interface:
         print "Got RGB Image"
 
         try:
-            self.cv_image[id] = self.bridge.imgmsg_to_cv2(data, desired_encoding="passthrough")
+            self.cv_image_array[id] = self.bridge.imgmsg_to_cv2(data, desired_encoding="passthrough")
             self.got_image = True
         except CvBridgeError as e:
             print(e)
 
+    def imageArrayCallback(self, image_0, image_1, image_2, image_3, image_4, image_5, image_6, image_7, image_8):
+
+        print "Got 9 Images from Camera"
+
+
+
+        #return images or process them here
+        image_array = [image_0,image_1,image_2,image_3,image_4,image_5,image_6,image_7,image_8]
+
+        self.lock.acquire()
+
+        try:
+            for i in range(0,self.nCameras):
+                self.cv_image_array[i] = self.bridge.imgmsg_to_cv2(image_array[i], desired_encoding="passthrough")
+                self.got_image_array[i] = True
+        except CvBridgeError as e:
+            print(e)
+
+        self.new_camera_data = True
+
+        self.lock.release()
+
+    # def getCameraImages(self):
+    #
+    #     if(sum(self.got_image_array) == self.nCameras):
+    #         return self.cv_image_array
 
     def getCameraPositions(self):
 
@@ -274,16 +317,60 @@ class ros_interface:
         else:
             return True
 
-    def getObjectiveFunctionValues(self):
 
-        #this gets updated from subscriber callbackpixel_sizes
-        #wait until new data arrives
-        # for i in range(0,5):
-        #print "Getting camera data"
+    def detect_objects(self, image):
+           # Convert BGR to HSV
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        # Threshold the HSV image to get only blue colors
+        mask1 = cv2.inRange(hsv, self.lower_red, self.upper_red)
+        mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
+        mask = cv2.bitwise_or(mask1,mask2)
+
+        erode = cv2.erode(mask,np.ones((5,5)))
+        mask = cv2.dilate(erode,np.ones((5,5)))
+
+        segmentedImage = cv2.bitwise_and(image,image, mask=mask)
+
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        object_ = []
+
+        if len(contours) != 0:
+            #find the biggest area
+            cnt = max(contours, key = cv2.contourArea)
+            pixel_size = cv2.contourArea(cnt)
+            if pixel_size > 1000:
+                M = cv2.moments(cnt)
+                cx = int(M['m10']/M['m00'])
+                cy = int(M['m01']/M['m00'])
+                object_ = {'centre_x':cx,'centre_y':cy,'size':pixel_size}
+                # objects.append(dict(object_))
+
+        return object_, segmentedImage
+
+    def getObjectiveFunctionValues(self):
 
         while not self.new_camera_data:
             print "Waiting for new camera data"
             time.sleep(0.1)
+
+        for i in range(0,self.nCameras):
+
+            self.lock.acquire()
+            object, segmentedImage = self.detect_objects(self.cv_image_array[i])
+            self.lock.release()
+
+            if len(object) > 0:
+
+                self.blob_centres[i] = (object['centre_x'], object['centre_y'])
+
+                self.pixel_sizes[i] = object['size']/float(640*480)
+
+                #keep a sliding window of sizes for filtering
+                self.pixel_sizes_buffer[i].append(copy.deepcopy(self.pixel_sizes[i]))
+                del self.pixel_sizes_buffer[i][0]
+
+                self.pixel_sizes_filtered[i] = sum(self.pixel_sizes_buffer[i])/self.window_size
 
         self.new_camera_data = False
         # return self.pixel_sizes_filtered, self.blob_centres

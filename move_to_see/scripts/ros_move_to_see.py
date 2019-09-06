@@ -30,69 +30,163 @@
 
 import time
 import cv2 as cv
-import array
+#import array
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import math
-import cProfile
-from PIL import Image as I
-from pyquaternion import Quaternion as pyQuat
+import collections
+#import cProfile
+#from PIL import Image as I
+#from pyquaternion import Quaternion as pyQuat
 from collections import deque
 import scipy
 import scipy.sparse.linalg
 import scipy.linalg
 
-from ros_interface import ros_interface
-from harvey_msgs.msg import moveToSee
+
 import rospy
+from tf.transformations import quaternion_from_euler
+
 #import pylab as plb
+
+class Xtype:
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
 
 
 class move_to_see:
 
-    def __init__(self, number_of_cameras):
+    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15 ):
 
-        print ('Creating ros interface')
 
         self.nCameras = number_of_cameras
-        self.interface = ros_interface(number_of_cameras)
+
+
+
+        if interface == "ROS":
+            print ('Creating ros interface')
+            import ros_interface as ri
+            self.interface = ri.ros_interface(number_of_cameras)
+        elif interface == "VREP":
+            print ('Creating vrep interface')
+            import vrep_interface as vi
+            self.interface = vi.vrep_interface(number_of_cameras)
+            self.interface.start_sim()
         #vrep.simxFinish(-1) # just in case, close all opened connections
         #clientID=vrep.simxStart('127.0.0.1',19997,True,True,5000,5) # Connect to V-REP
+
+        self.set_orientation = True
+
+        self.noise_std = 0.001
+
+        self.step_size = step_size
 
         self.count = 0
         self.counts = []
 
-        self.publisher = rospy.Publisher("/move_to_see_data", moveToSee, queue_size=10)
-        self.move_to_see_msg = moveToSee()
-        self.move_to_see_msg.nCameras = number_of_cameras
-        self.move_to_see_msg.header.stamp = rospy.Time.now()
-        self.move_to_see_msg.header.seq = self.count
-        self.move_to_see_msg.header.frame_id = "/move_to_see"
         #res,robotHandle=vrep.simxGetObjectHandle(clientID,'UR5',vrep.simx_opmode_oneshot_wait)
-        plt.clf()
-        fig = plt.figure(1)
+        if self.interface.type == "VREP":
+            plt.clf()
+            self.fig = plt.figure(1)
+
+            plt.ion()
+            plt.show()
+
+        self.dist_weight = 0.0
+        self.size_weight = size_weight
+        self.manip_weight = manip_weight
+
+        if self.interface.type == "VREP":
+            self.image_width = 256
+            self.image_height = 256
+            self.image_cx = 0.5
+            self.image_cy = 0.5
+
+            self.FOV_x = 60
+            self.FOV_y = 60
+
+        #change to be user definable
+        elif self.interface.type == "ROS":
+            self.image_width = 640
+            self.image_height = 480
+            self.image_cx = 320
+            self.image_cy = 240
+            self.FOV_x = 62.2
+            self.FOV_y = 48.8
+
+
+
 
         startTime=time.time()
 
         self.ref_index = 4 #index of middle camera
         self.ref_size = 0 #use this as a stopping condition
 
-        self.plot_array1 = []
         self.max_size = []
         self.max_distance = []
-        self.plot_array2 = []
-
-        plt.ion()
-
 
         self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
 
-        self.queue_size = 10
-        self.delta_magnitude_queue = deque(np.zeros(self.queue_size))
-        self.current_delta_mag = 1e5
-        self.avg_delta_magnitude = 0.0
-        self.tolerance = 0.000001
+        self.queue_size = 5
+        self.tolerance = end_tolerance
+        self.max_pixel = max_pixel
+
+        self.images = []
+        for i in range(0,self.nCameras):
+            self.images.append([])
+        self.ee_poses = []
+        self.pose_deltas = []
+        self.ref_size = 0.0
+        self.count = 0
+        self.ref_pixel_sizes = []
+        self.ref_pixel_sizes_zero_noise = []
+        self.ref_manips = []
+        self.counts = []
+        self.accum_step_size = 0.0
+        self.gradients = []
+        self.avg_abs_gradient_queue = deque(1e5*np.ones(self.queue_size))
+        self.abs_gradient = 1e5
+        self.avg_abs_gradient = 1e5
+
+    def reset(self):
+
+        self.ee_poses = []
+        self.pose_deltas = []
+        self.ref_size = 0.0
+        self.count = 0
+        self.ref_pixel_sizes = []
+        self.ref_pixel_sizes_zero_noise = []
+        self.ref_manips = []
+        self.counts = []
+        self.accum_step_size = 0.0
+        self.gradients = []
+        self.avg_abs_gradient_queue = deque(1e5*np.ones(self.queue_size))
+        self.abs_gradient = 1e5
+        self.avg_abs_gradient = 1e5
+
+
+    def setObjectiveFunctionWeights(self,size_weight,manip_weight):
+        self.size_weight = size_weight
+        self.manip_weight = manip_weight
+
+    def setCameraPosition(self,radius,link_offset,camera_angle,set_euler_angles):
+
+        self.interface.setCameraOffsets(radius,link_offset,camera_angle,set_euler_angles)
+
+        self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
+
+        #delete the fourth camera value as this is the reference camera
+        self.camera_vectors = (np.delete(self.camera_positions,4,1)).transpose()
+        self.camera_vector_mags = np.linalg.norm(self.camera_vectors,None,1)
+        self.camera_unit_vectors = self.camera_vectors/self.camera_vector_mags[:,np.newaxis]
+
+    def initCameraPosition(self):
+
+        self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
+        self.camera_vectors = (np.delete(self.camera_positions,4,1)).transpose()
+        self.camera_vector_mags = np.linalg.norm(self.camera_vectors,None,1)
+        self.camera_unit_vectors = self.camera_vectors/self.camera_vector_mags[:,np.newaxis]
+
 
     def computePixelDifferent(self, image_1,image_2):
 
@@ -104,11 +198,17 @@ class move_to_see:
         cv.absdiff(image_1,image_2,diffImage)
 
 
-    def calcNumericalDerivative(self, pixel_size, ref_size, blob_centre,ref_blob_centre):
 
-        dist_weight = 0.0
-        size_weight = 1.0
-        manip_weight = 0.0
+    def calcNumericalDerivative(self, x1, x2):
+
+       # ref_size = x1.pixel_size
+        #ref_blob_centre = x1.blob_centre
+        #ref_manip = x1.manip
+        dist_weight = self.dist_weight
+        size_weight = self.size_weight
+        manip_weight = self.manip_weight
+
+        #ref_size, blob_centre,
 
         #ensure weights sum to 1
         dist_weight = dist_weight/(dist_weight+size_weight+manip_weight)
@@ -117,56 +217,76 @@ class move_to_see:
 
         # maxPixels = 256 * 256 * 2/3
 
-        image_cx = 0.5
-        image_cy = 0.5
+        #image_cx = 0.5
+        #image_cy = 0.5
 
-        distance = 1 - math.sqrt(math.pow(blob_centre[0] - image_cx,2) + math.pow(blob_centre[1] - image_cy,2))
-        ref_distance = 1 - math.sqrt(math.pow(ref_blob_centre[0] - image_cx,2) + math.pow(ref_blob_centre[1] - image_cy,2))
 
-        distance_diff = (ref_distance - distance) / ref_distance
+        #distance1 = 1 - math.sqrt(math.pow(x1.blob_centre[0] - self.image_cx,2) + math.pow(x1.blob_centre[1] - self.image_cy,2))
+        #distance2 = 1 - math.sqrt(math.pow(x2.blob_centre[0] - self.image_cx,2) + math.pow(x2.blob_centre[1] - self.image_cy,2))
 
-        norm_pixel_diff = (pixel_size - ref_size) / ref_size #changed this around maybe its wrong
 
-        # manip_diff = manip-ref_manip
+        #if ref_distance > 0:
+             # manip_diff = manip-ref_manip
 
-        if not (pixel_size == 0.0):
-            total_delta = size_weight*norm_pixel_diff + dist_weight*distance_diff #+ manip_weight*manip_diff
+        if (x2.pixel_size > 0.0) and (x1.pixel_size > 0.0):
+            #distance_diff = (distance1 - distance2) / distance1
+
+            norm_pixel_diff = (x2.pixel_size - x1.pixel_size) / x1.pixel_size #changed this around maybe its wrong
+
+            if self.interface.type == "ROS":
+                manip_diff = 0
+            else:
+                manip_diff = (x2.manip - x1.manip) / x1.manip
+
+            total_delta = size_weight*norm_pixel_diff + manip_weight*manip_diff
+            ref_objective_value = size_weight*x1.pixel_size + manip_weight*x1.manip
         else:
             total_delta = 0.0
+            ref_objective_value = 0.0
 
-        return total_delta
+        return total_delta, ref_objective_value
 
-    def getNumericalDerivatives(self):
+    def getNumericalDerivatives(self,noise_std=0.001,use_noise=False):
 
         delta_matrix = np.zeros([3,3])
-        size_matrix = np.zeros([3,3])
-        distance_matrix = np.zeros([3,3])
 
         #get the reference pixel size and manipulability (camera 5 indexed at 0)
+        if self.interface.type == "VREP":
+            pixel_sizes, blob_centres, manip = self.interface.getObjectiveFunctionValues()
+            pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
 
-        pixel_sizes, blob_centres, pixel_sizes_unfiltered = self.interface.getObjectiveFunctionValues()
+        elif self.interface.type == "ROS":
+            pixel_sizes, blob_centres, pixel_sizes_unfiltered = self.interface.getObjectiveFunctionValues()
 
-        print ("pixel sizes: \n")
-        print (np.array(pixel_sizes).reshape((3,3)))
-        print "\n"
-        # print ("blob_centres: ", blob_centres)
-        # print "\n"
+        x = []
+        x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0)
 
-        ref_size = pixel_sizes[4]
-        ref_blob_centre = blob_centres[4]
+        for i in range(0,self.nCameras):
 
-        # if(ref_size == 0.0):
-        #     return delta_matrix, ref_size
 
-        for i in range(0,9):
-            # print("i: ",i)
-            # print("blob size: ", pixel_sizes[i])
-            # print("blob_centres: ", blob_centres[i])
-            # print("manip: ", manip[i])
-            delta = self.calcNumericalDerivative(pixel_sizes[i], ref_size, blob_centres[i], ref_blob_centre)
+            x.append(Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip = 0.0))
+
+
+
+            if not blob_centres[i] == [] and not blob_centres[4] == [] and not pixel_sizes[i] == [] and not pixel_sizes[4] == []:
+                x_ref.blob_centre = blob_centres[4]
+                x[i].blob_centre = blob_centres[i]
+
+
+                x_ref.manip = 0.0
+                x[i].manip = 0.0
+
+                x_ref.pixel_size = pixel_sizes[4]
+                x[i].pixel_size = pixel_sizes[i]
+
+
+
+            delta,x_ref_obj_val = self.calcNumericalDerivative(x_ref, x[i])
+
+
             delta_matrix[np.unravel_index(i, delta_matrix.shape)] = delta
 
-        return delta_matrix, ref_size, pixel_sizes, pixel_sizes_unfiltered
+        return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val
 
     def showNImages(self, windowName, images):
 
@@ -189,13 +309,12 @@ class move_to_see:
 
         derivative = x.dot(direction_vectors_inv)
 
-
         residuals = derivative.dot(direction_vectors.transpose()) - x
 
 
-        print ("residuals: \n")
-        print (np.insert(residuals,4,0.0).reshape((3,3)))
-        print "\n"
+        #print ("residuals: \n")
+        #print (np.insert(residuals,4,0.0).reshape((3,3)))
+        #print "\n"
         # print ("derivative: ", derivative.shape)
 
         return derivative
@@ -245,121 +364,245 @@ class move_to_see:
         cumsum = np.cumsum(np.insert(x, 0, 0))
         return (cumsum[N:] - cumsum[:-N]) / N
 
-    def execute(self):
+    def compute_roll_pitch(self, blob_centre):
+
+        if self.interface.type == "VREP":
+            image_width = 1
+            image_height = 1
+            image_cx = 0.5
+            image_cy = 0.5
+        elif self.interface.type == "ROS":
+            image_width = 640
+            image_height = 480
+            image_cx = 320
+            image_cy = 240
+
+        delta_x = (blob_centre[0] - self.image_cx)/image_width
+        delta_y = (blob_centre[1] - self.image_cy)/image_height
+
+        #print ("Blob centre x = ", blob_centre[0])
+        #print ("Blob centre y = ", blob_centre[1])
+        #print ("delta_x = ", delta_x)
+        #print ("delta_x = ", delta_y)
+
+
+
+        dRoll = math.radians(self.FOV_x*delta_x)
+        dPitch =  math.radians(self.FOV_y*delta_y)
+
+        if abs(dPitch) < 0.02:
+            dPitch= 0.0
+        if abs(dRoll) < 0.02:
+            dRoll = 0.0
+
+        return dRoll,dPitch
+
+    def execute(self, move_robot):
 
         print ('Executing servo loop')
         print "\n"
-        rate = rospy.Rate(100) # 100hz
 
-        print "Setting arm to initial position"
-        if not self.interface.movetoNamedPose("harvey_arm","move_to_see_start", 0.4):
-            print "failed to reset robot arm"
-            return
+        use_noise=False
+
+        if self.interface.type == "ROS":
+            use_noise = False
+            rate = rospy.Rate(10) # 100hz
+
+
 
         # pose_down = [-0.075,0.0,0.0,-0.05,0.05,0.0,1.0]
         # self.interface.servoPose(pose_down, "harvey_arm", "pi_camera_link", 0.4)
 
+        print ('Diff of avg delta and current delta ', self.avg_abs_gradient)
+        print ('should be smaller then tolerance: ', self.tolerance)
 
-        while not rospy.is_shutdown() and (abs(self.avg_delta_magnitude - self.current_delta_mag) > self.tolerance) and (self.ref_size < 0.15):
+
+        if self.interface.type == "VREP":
+            self.start_image = self.interface.getImage()
+
+        delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise)
+
+        while (self.avg_abs_gradient > self.tolerance) and (self.x_ref.pixel_size < self.max_pixel) and (self.count < 200):
 
             # raw_input("Press Enter to continue...")
 
-            delta_matrix, self.ref_size, pixel_sizes, pixel_sizes_unfiltered = self.getNumericalDerivatives()
+            delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise)
+
             delta_flat = np.delete(delta_matrix.reshape((1,9)),4,None)
 
-            print ('Numerical deltas: \n')
-            print (delta_matrix)
-            print "\n"
-
-            #delete the fourth camera value as this is the reference camera
-            camera_vectors = (np.delete(self.camera_positions,4,1)).transpose()
-            camera_vector_mags = np.linalg.norm(camera_vectors,None,1)
-            camera_unit_vectors = camera_vectors/camera_vector_mags[:,np.newaxis]
-
-            numerical_derivative = np.divide(delta_flat,camera_vector_mags)
-            print ('numerical_derivative (delta/step size): \n')
-            print (np.insert(numerical_derivative,4,0.0).reshape((3,3))) #insert 0 back into camera 4 for pretty print
-            print "\n"
-
-            self.current_delta_mag = np.sqrt(delta_flat.dot(delta_flat))
-
-            self.delta_magnitude_queue.appendleft(self.current_delta_mag)
-            self.delta_magnitude_queue.pop()
-            self.avg_delta_magnitude = sum(self.delta_magnitude_queue)/self.queue_size
-
-            print "Current delta magnitude: ", self.current_delta_mag
-            print "Average delta magnitude: ", self.avg_delta_magnitude
-            print ('Diff of avg delta and current delta ', abs(self.avg_delta_magnitude - self.current_delta_mag))
-
-            # print ('camera_positions: ', self.camera_positions)
-            # print "\n"
-            # print ('camera_unit_vectors: ', camera_unit_vectors)
-            # print "\n"
-
-            derivative = self.computeDirDerivative(camera_unit_vectors,numerical_derivative)
-            print ('directional derivative: \n')
-            print (derivative)
-            print "\n"
+            #print ('Numerical deltas: \n')
+            #print (delta_matrix)
+            #print "\n"
 
             if (np.sum(delta_matrix) == 0.0):
-                print "delta matrix = 0"
+                print "delta matrix = 0, stopping"
                 break
             else:
 
-                step_size = 0.005
+                numerical_derivative = np.divide(delta_flat,self.camera_vector_mags)
 
-                pose = step_size*derivative
-                # pose = [0,0,0.1]
-                pose = np.append(pose,0) #add 0 angle for quaternion x
-                pose = np.append(pose,0) #add 0 angle for quaternion y
-                pose = np.append(pose,0) #add 0 angle for quaternion z
-                pose = np.append(pose,1) #add 0 angle for quaternion w
+                self.gradient = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
+                self.gradients.append(self.gradient)
 
-                pose = pose.reshape((7,))
-                # print ('pose: \n'
-                # print (pose)
-                # print "\n"
+                dRoll, dPitch = self.compute_roll_pitch(self.x_ref.blob_centre)
 
-                self.interface.servoPose(pose, "harvey_pi_camera", "pi_camera_link", 0.2)
+                #print "Roll = ", dRoll
+                #print "Pitch = ", dPitch
 
-                self.counts.append(self.count)
+                #print ("Roll angle: ", math.degrees(dRoll))
+                #print ("Roll pitch: ", math.degrees(dPitch))
+
+                #self.current_delta_mag = np.sqrt(delta_flat.dot(delta_flat))
+                self.avg_abs_gradient = sum(self.avg_abs_gradient_queue)/self.queue_size
+                self.abs_gradient = np.linalg.norm(self.gradient)
+                self.avg_abs_gradient_queue.appendleft(self.abs_gradient)
+                self.avg_abs_gradient_queue.pop()
+
+                pose_delta = self.step_size*self.gradient
+
+                ##################################################
+
+                if self.interface.type == "ROS":
+                    # pose = [0,0,0.1]
+                    #q = quaternion_from_euler(0,0,0)
+                    q = quaternion_from_euler(-dRoll/2,-dPitch/2,0)
+                    #q = quaternion_from_euler(-dRoll,0,0)
+
+                    #pose_delta[0,0] = 0
+                    #pose_delta[0,1] = 0
+                    #pose_delta[0,2] = 0
+
+                    pose_delta = np.append(pose_delta,q[0]) #add quaternion x
+                    pose_delta = np.append(pose_delta,q[1]) #add quaternion y
+                    pose_delta = np.append(pose_delta,q[2]) #add quaternion z
+                    pose_delta = np.append(pose_delta,q[3]) #add quaternion w
+                    pose_delta = pose_delta.reshape((7,))
+
+
+                    #print "Pose delta = ", pose_delta
+                    if(move_robot):
+                        self.interface.servoPose(pose_delta)
+
+                    ee_pose = self.interface.getCurrentPose()
+                    self.ee_poses.append(ee_pose)
+
+                    #self.interface.publish_data(pixel_sizes,pixel_sizes_unfiltered,self.x_ref.pixel_size, self.count)
+
+                elif self.interface.type == "VREP":
+
+                    #pose = [0,0,0]
+                    if self.set_orientation==True:
+                        pose_delta = np.append(pose_delta,-dPitch/2) #add 0 angle for euler x
+                        pose_delta = np.append(pose_delta,-dRoll/2)
+                    else:
+                        pose_delta = np.append(pose_delta,0)
+                        pose_delta = np.append(pose_delta,0)
+
+                    pose_delta = np.append(pose_delta,0)
+                    pose_delta = pose_delta.reshape((6,))
+
+                    # apply pose to robot in VREP
+                    self.interface.servoPoseEuler(pose_delta)
+
+                    #add data to lists
+                    ee_pose = self.interface.getCurrentPose()
+                    self.ee_poses.append(ee_pose)
+
+                ######################################3
+
+                self.pose_deltas.append(pose_delta)
+
+                self.ref_pixel_sizes.append(self.x_ref.pixel_size)
+                self.ref_manips.append(self.x_ref.manip)
+
                 self.count = self.count + 1
+                self.counts.append(self.count)
 
-                self.move_to_see_msg.header.stamp = rospy.Time.now()
-                self.move_to_see_msg.header.seq = self.count
-                self.move_to_see_msg.header.frame_id = "/move_to_see"
-                self.move_to_see_msg.pixel_sizes = pixel_sizes
-                self.move_to_see_msg.pixel_sizes_unfiltered = pixel_sizes_unfiltered
+                    #self.ref_size_data.append(self.x_ref.pixel_size)
+                    #self.ref_size_data2.append(self.ref_size_no_noise)
 
-                print ("pixel sizes: \n")
-                print (np.array(pixel_sizes).reshape((3,3)))
-                print "\n"
-                self.move_to_see_msg.ref_pixel_size = self.ref_size
+                # plot runtime data
+                if self.interface.type == "VREP":
+                    plt.figure(1)
+                    self.fig.clf()
 
-                self.publisher.publish(self.move_to_see_msg)
+                    plt.subplot(211)
+                    plt.plot(self.counts,self.ref_pixel_sizes,'r')
+
+                    plt.subplot(212)
+                    plt.plot(self.counts,self.ref_manips,'b')
+
+                    self.fig.canvas.draw()
+                    self.fig.canvas.flush_events()
+                    #plt.draw()
+
 
                 #end control loop by maintaining desired rate
-                # time.sleep(0.05)
-                rate.sleep()
+                if self.interface.type == "ROS":
+    	    	    # for i in range(0,self.nCameras):
+                    #     print "Getting image from camera_",str(i)
+                    #     self.images[i].append(self.interface.getCameraImage(i))
+                    # #self.images.append(self.interface.getCameraImage(4))
 
 
-            print ('Current object reference size: ', self.ref_size)
+                    #self.images.append(self.interface.getRefCameraImage())
+                    rate.sleep()
+
+                #print ('directional derivative: \n')
+                #print (self.gradient)
+                #print "\n"
+
+
+            print ('Avg Abs Gradient: ', self.avg_abs_gradient)
+            print ('will stop if smaller then tolerance: ', self.tolerance)
+            print ('Ref pixel size is ', self.x_ref.pixel_size)
+            print ('Will terminate when greater than max pixel size ', self.max_pixel)
             print "\n"
+            #print ('numerical_derivative (delta/step size): \n')
+            #insert 0 back into camera 4 for pretty print
+            #print (np.insert(numerical_derivative,4,0.0).reshape((3,3)))
+            #print "\n"
 
-            print ('Diff of avg delta and current delta ', abs(self.avg_delta_magnitude - self.current_delta_mag))
-            print ('should be smaller then tolerance: ', self.tolerance)
-            print "\n"
-        else:
-            print ('Failed connecting to remote API server')
+        if self.interface.type == "VREP":
+            self.end_image = self.interface.getImage()
 
         print ('cost within tolerance, finished')
 
+
+        print ('Avg Abs Gradient: ', self.avg_abs_gradient)
+        print ('stopped if smaller then tolerance: ', self.tolerance)
+        print ('Ref pixel size is ', self.x_ref.pixel_size)
+        print ('Will terminate when greater than max pixel size ', self.max_pixel)
+        print "\n"
+
+        ret_dict = {}
+        ret_dict['images'] = self.images
+        ret_dict['count'] = self.counts
+        ret_dict['gradient'] = self.gradients
+        ret_dict['ref_pixel_size'] = self.ref_pixel_sizes
+        ret_dict['ref_manip'] = self.ref_manips
+        ret_dict['ee_pose'] = self.ee_poses
+        ret_dict['pose_deltas'] = self.pose_deltas
+
+        if self.interface.type == "VREP":
+            ret_dict['start_end_images'] = [self.start_image, self.end_image]
+
+        return ret_dict
+
 if __name__=="__main__":
 
-    rospy.init_node("harvey_move_to_see")
 
-    print "Running camera array master"
+    interface = "ROS"
 
-    mvs = move_to_see(9)
-    mvs.execute()
+    if interface == "ROS":
+        rospy.init_node("harvey_move_to_see")
+        print "Running move to see node"
+
+        mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=0.75,max_pixel=0.4)
+        mvs.initCameraPosition()
+
+    else:
+        mvs = move_to_see(9,"VREP")
+
+    data = mvs.execute()
     #cProfile.run('move_to_see()')
