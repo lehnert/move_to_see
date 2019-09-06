@@ -56,7 +56,7 @@ class Xtype:
 
 class move_to_see:
 
-    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15 ):
+    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15,max_count=50):
 
 
         self.nCameras = number_of_cameras
@@ -82,10 +82,18 @@ class move_to_see:
         self.step_size = step_size
 
         self.count = 0
+        self.max_count = max_count
         self.counts = []
 
         #res,robotHandle=vrep.simxGetObjectHandle(clientID,'UR5',vrep.simx_opmode_oneshot_wait)
         if self.interface.type == "VREP":
+            plt.clf()
+            self.fig = plt.figure(1)
+
+            plt.ion()
+            plt.show()
+
+        if self.interface.type == "ROS":
             plt.clf()
             self.fig = plt.figure(1)
 
@@ -134,6 +142,10 @@ class move_to_see:
         self.images = []
         for i in range(0,self.nCameras):
             self.images.append([])
+
+        self.objects = []
+        for i in range(0,self.nCameras):
+            self.objects.append([])
         self.ee_poses = []
         self.pose_deltas = []
         self.ref_size = 0.0
@@ -144,6 +156,9 @@ class move_to_see:
         self.counts = []
         self.accum_step_size = 0.0
         self.gradients = []
+        self.grad_x = []
+        self.grad_y = []
+        self.grad_z = []
         self.avg_abs_gradient_queue = deque(1e5*np.ones(self.queue_size))
         self.abs_gradient = 1e5
         self.avg_abs_gradient = 1e5
@@ -256,17 +271,14 @@ class move_to_see:
             pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
 
         elif self.interface.type == "ROS":
-            pixel_sizes, blob_centres, pixel_sizes_unfiltered = self.interface.getObjectiveFunctionValues()
+            pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
 
         x = []
         x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0)
 
         for i in range(0,self.nCameras):
 
-
             x.append(Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip = 0.0))
-
-
 
             if not blob_centres[i] == [] and not blob_centres[4] == [] and not pixel_sizes[i] == [] and not pixel_sizes[4] == []:
                 x_ref.blob_centre = blob_centres[4]
@@ -278,7 +290,8 @@ class move_to_see:
 
                 x_ref.pixel_size = pixel_sizes[4]
                 x[i].pixel_size = pixel_sizes[i]
-
+            else:
+                print "target not found in all images"
 
 
             delta,x_ref_obj_val = self.calcNumericalDerivative(x_ref, x[i])
@@ -286,7 +299,7 @@ class move_to_see:
 
             delta_matrix[np.unravel_index(i, delta_matrix.shape)] = delta
 
-        return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val
+        return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val, camera_images, objects
 
     def showNImages(self, windowName, images):
 
@@ -420,13 +433,17 @@ class move_to_see:
         if self.interface.type == "VREP":
             self.start_image = self.interface.getImage()
 
-        delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise)
+        delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
 
-        while (self.avg_abs_gradient > self.tolerance) and (self.x_ref.pixel_size < self.max_pixel) and (self.count < 200):
+        while (self.avg_abs_gradient > self.tolerance) and (self.x_ref.pixel_size < self.max_pixel) and (self.count < self.max_count):
 
             # raw_input("Press Enter to continue...")
 
-            delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise)
+            delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
+
+            for i in range(0,self.nCameras):
+                self.images[i].append(camera_images[i])
+                self.objects[i].append(objects[i])
 
             delta_flat = np.delete(delta_matrix.reshape((1,9)),4,None)
 
@@ -465,7 +482,8 @@ class move_to_see:
                 if self.interface.type == "ROS":
                     # pose = [0,0,0.1]
                     #q = quaternion_from_euler(0,0,0)
-                    q = quaternion_from_euler(-dRoll/2,-dPitch/2,0)
+                    # q = quaternion_from_euler(-dRoll/2,-dPitch/2,0)
+                    q = quaternion_from_euler(-dRoll/10,-dPitch/10,0)
                     #q = quaternion_from_euler(-dRoll,0,0)
 
                     #pose_delta[0,0] = 0
@@ -479,8 +497,11 @@ class move_to_see:
                     pose_delta = pose_delta.reshape((7,))
 
 
-                    #print "Pose delta = ", pose_delta
+                    print "Pose delta = ", pose_delta
+                    print "Roll: ", dRoll
+                    print "Roll: ", dPitch
                     if(move_robot):
+                        raw_input("Press Enter to move robot one step...")
                         self.interface.servoPose(pose_delta)
 
                     ee_pose = self.interface.getCurrentPose()
@@ -536,12 +557,36 @@ class move_to_see:
                     self.fig.canvas.flush_events()
                     #plt.draw()
 
+                if self.interface.type == "ROS":
+
+                    print self.gradient.shape
+
+                    self.grad_x.append(self.gradient[0,0])
+                    self.grad_y.append(self.gradient[0,1])
+                    self.grad_z.append(self.gradient[0,2])
+
+
+                    plt.figure(1)
+                    self.fig.clf()
+
+                    plt.subplot(311)
+                    plt.plot(self.counts,self.grad_x,'r')
+
+                    plt.subplot(312)
+                    plt.plot(self.counts,self.grad_y,'g')
+
+                    plt.subplot(313)
+                    plt.plot(self.counts,self.grad_z,'b')
+
+                    self.fig.canvas.draw()
+                    self.fig.canvas.flush_events()
+
 
                 #end control loop by maintaining desired rate
-                if self.interface.type == "ROS":
-    	    	    # for i in range(0,self.nCameras):
-                    #     print "Getting image from camera_",str(i)
-                    #     self.images[i].append(self.interface.getCameraImage(i))
+                # if self.interface.type == "ROS":
+    	    	#     for i in range(0,self.nCameras):
+                #         print "Getting image from camera_",str(i)
+                #         self.images[i].append(self.interface.getCameraImage(i))
                     # #self.images.append(self.interface.getCameraImage(4))
 
 
@@ -554,9 +599,11 @@ class move_to_see:
 
 
             print ('Avg Abs Gradient: ', self.avg_abs_gradient)
+            print ('Gradient: ', self.gradient)
             print ('will stop if smaller then tolerance: ', self.tolerance)
             print ('Ref pixel size is ', self.x_ref.pixel_size)
             print ('Will terminate when greater than max pixel size ', self.max_pixel)
+            print ('Count: ', self.count)
             print "\n"
             #print ('numerical_derivative (delta/step size): \n')
             #insert 0 back into camera 4 for pretty print
@@ -577,6 +624,7 @@ class move_to_see:
 
         ret_dict = {}
         ret_dict['images'] = self.images
+        ret_dict['objects'] = self.objects
         ret_dict['count'] = self.counts
         ret_dict['gradient'] = self.gradients
         ret_dict['ref_pixel_size'] = self.ref_pixel_sizes

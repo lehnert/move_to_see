@@ -34,6 +34,8 @@ import time
 import numpy as np
 import math
 import rospy
+import scipy.io
+import pickle
 
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
@@ -46,9 +48,26 @@ if __name__=="__main__":
 
     rospy.init_node("test")
 
-    mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=0.75,max_pixel=0.4)
+    mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=0.75,max_pixel=0.4,max_count=200)
     mvs.initCameraPosition()
 
-    data = mvs.execute(False)
+    print "Setting arm to initial position"
+    if not mvs.interface.movetoNamedPose("harvey_arm","move_to_see_start_v4", 0.4):
+        print "failed to reset robot arm"
+        exit()
 
-    rospy.spin()
+    data = mvs.execute(move_robot=True)
+
+
+
+    path = "/home/chris/move_to_see_data"
+
+    file_name = path + "/cnn_data_capture_" + time.strftime("%Y_%m_%d-%H_%M_%S")
+
+    scipy.io.savemat(file_name+".mat", data)
+
+    fileObject = open(file_name+".pickle",'wb')
+    pickle.dump(data,fileObject)
+    fileObject.close()
+
+    print "Finished capturing data"

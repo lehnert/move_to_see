@@ -95,7 +95,7 @@ class ros_interface:
         self.move_to_see_msg.header.frame_id = "/move_to_see"
 
         hsv_hue_low = rospy.get_param("~hsv_hue_low",0)
-        hsv_hue_high = rospy.get_param("~hsv_hue_high",28)
+        hsv_hue_high = rospy.get_param("~hsv_hue_high",10)
         hsv_sat_low = rospy.get_param("~hsv_sat_low",120)
         hsv_sat_high = rospy.get_param("~hsv_sat_high",255)
         hsv_val_low = rospy.get_param("~hsv_val_low",50)
@@ -212,7 +212,6 @@ class ros_interface:
         return self.cv_image_array[i]
 
 
-
     def getRefCameraImage(self):
 
         self.got_image = False
@@ -240,10 +239,7 @@ class ros_interface:
 
     def imageArrayCallback(self, image_0, image_1, image_2, image_3, image_4, image_5, image_6, image_7, image_8):
 
-        print "Got 9 Images from Camera"
-
-
-
+        # print "Got 9 Images from Camera"
         #return images or process them here
         image_array = [image_0,image_1,image_2,image_3,image_4,image_5,image_6,image_7,image_8]
 
@@ -251,7 +247,7 @@ class ros_interface:
 
         try:
             for i in range(0,self.nCameras):
-                self.cv_image_array[i] = self.bridge.imgmsg_to_cv2(image_array[i], desired_encoding="passthrough")
+                self.cv_image_array[i] = cv2.flip( self.bridge.imgmsg_to_cv2(image_array[i], desired_encoding="passthrough"), 0 )
                 self.got_image_array[i] = True
         except CvBridgeError as e:
             print(e)
@@ -332,7 +328,7 @@ class ros_interface:
 
         segmentedImage = cv2.bitwise_and(image,image, mask=mask)
 
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        _, contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         object_ = []
 
         if len(contours) != 0:
@@ -343,8 +339,11 @@ class ros_interface:
                 M = cv2.moments(cnt)
                 cx = int(M['m10']/M['m00'])
                 cy = int(M['m01']/M['m00'])
-                object_ = {'centre_x':cx,'centre_y':cy,'size':pixel_size}
+                object_ = {'centre_x':cx,'centre_y':cy,'size':pixel_size,'contour':cnt}
+
+                cv2.drawContours(segmentedImage, [cnt], 0 , (0,255,0), 3)
                 # objects.append(dict(object_))
+
 
         return object_, segmentedImage
 
@@ -354,11 +353,18 @@ class ros_interface:
             print "Waiting for new camera data"
             time.sleep(0.1)
 
+        segmentedImage_array = []
+
+        self.lock.acquire()
+
+        objects = []
+
         for i in range(0,self.nCameras):
 
-            self.lock.acquire()
-            object, segmentedImage = self.detect_objects(self.cv_image_array[i])
-            self.lock.release()
+
+            object, image = self.detect_objects(self.cv_image_array[i])
+            objects.append(object)
+            segmentedImage_array.append(image)
 
             if len(object) > 0:
 
@@ -371,10 +377,39 @@ class ros_interface:
                 del self.pixel_sizes_buffer[i][0]
 
                 self.pixel_sizes_filtered[i] = sum(self.pixel_sizes_buffer[i])/self.window_size
+            else:
+
+                # self.pixel_sizes[i] = 0
+                # self.pixel_sizes_buffer[i].append(0)
+                # del self.pixel_sizes_buffer[i][0]
+                #
+                # self.pixel_sizes_filtered[i] = sum(self.pixel_sizes_buffer[i])/self.window_size
+
+                print "No object found in image, setting pixel size to 0"
 
         self.new_camera_data = False
+
+        row_1 = np.hstack((self.cv_image_array[0], self.cv_image_array[1], self.cv_image_array[2]))
+        row_2 = np.hstack((self.cv_image_array[3], self.cv_image_array[4], self.cv_image_array[5]))
+        row_3 = np.hstack((self.cv_image_array[6], self.cv_image_array[7], self.cv_image_array[8]))
+        image_matrix = np.vstack((row_1, row_2, row_3))
+
+        seg_row_1 = np.hstack((segmentedImage_array[0], segmentedImage_array[1], segmentedImage_array[2]))
+        seg_row_2 = np.hstack((segmentedImage_array[3], segmentedImage_array[4], segmentedImage_array[5]))
+        seg_row_3 = np.hstack((segmentedImage_array[6], segmentedImage_array[7], segmentedImage_array[8]))
+        seg_image_matrix = np.vstack((seg_row_1, seg_row_2, seg_row_3))
+
+        cv2.imshow("Images", image_matrix)
+        cv2.imshow("Segmented Images", seg_image_matrix)
+
+        cv2.waitKey(30)
+
+        ret_images = copy.deepcopy(self.cv_image_array)
+
+        self.lock.release()
+
         # return self.pixel_sizes_filtered, self.blob_centres
-        return copy.deepcopy(self.pixel_sizes_filtered), copy.deepcopy(self.blob_centres), copy.deepcopy(self.pixel_sizes)
+        return copy.deepcopy(self.pixel_sizes_filtered), copy.deepcopy(self.blob_centres), copy.deepcopy(self.pixel_sizes), ret_images, objects
 
     # def moving_average_filter(self, data):
     #
