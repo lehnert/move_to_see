@@ -1,0 +1,595 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /TF1
+      Splitter Ratio: 0.5
+    Tree Height: 745
+  - Class: rviz/Selection
+    Name: Selection
+  - Class: rviz/Tool Properties
+    Expanded:
+      - /2D Pose Estimate1
+      - /2D Nav Goal1
+      - /Publish Point1
+    Name: Tool Properties
+    Splitter Ratio: 0.588679016
+  - Class: rviz/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz/Time
+    Experimental: false
+    Name: Time
+    SyncMode: 0
+    SyncSource: Camera 6
+Toolbars:
+  toolButtonStyle: 2
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.0299999993
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_0/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_1/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_2/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_3/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_4/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_5/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_6/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_7/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_8/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: compressed
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_0/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 0
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_1/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 1
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_2/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 2
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_3/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 3
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_4/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 4
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_5/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 5
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /pi_camera_6/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 6
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: true
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_7/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 7
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/Image
+      Enabled: false
+      Image Topic: /pi_camera_8/rgb_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera 8
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
+      Value: false
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        base:
+          Value: true
+        base_link:
+          Value: true
+        camera_link:
+          Value: true
+        ee_link:
+          Value: true
+        forearm_link:
+          Value: true
+        gazebo_camera_depth_frame:
+          Value: true
+        gazebo_camera_depth_optical_frame:
+          Value: true
+        gazebo_camera_rgb_frame:
+          Value: true
+        gazebo_camera_rgb_optical_frame:
+          Value: true
+        gripper_cutter_link:
+          Value: true
+        gripper_suction_link:
+          Value: true
+        harvey_base_link:
+          Value: true
+        harvey_chassis:
+          Value: true
+        harvey_lift_link:
+          Value: true
+        left_caster:
+          Value: true
+        left_front_wheel:
+          Value: true
+        left_wheel:
+          Value: true
+        odom:
+          Value: true
+        pi_camera_link:
+          Value: true
+        right_caster:
+          Value: true
+        right_front_wheel:
+          Value: true
+        right_wheel:
+          Value: true
+        shoulder_link:
+          Value: true
+        tongue_link:
+          Value: true
+        tool0_controller:
+          Value: true
+        upper_arm_link:
+          Value: true
+        wrist_1_link:
+          Value: true
+        wrist_2_link:
+          Value: true
+        wrist_3_link:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        odom:
+          harvey_base_link:
+            harvey_chassis:
+              harvey_lift_link:
+                base_link:
+                  base:
+                    tool0_controller:
+                      {}
+                  shoulder_link:
+                    upper_arm_link:
+                      forearm_link:
+                        wrist_1_link:
+                          wrist_2_link:
+                            wrist_3_link:
+                              ee_link:
+                                camera_link:
+                                  gazebo_camera_depth_frame:
+                                    gazebo_camera_depth_optical_frame:
+                                      {}
+                                  gazebo_camera_rgb_frame:
+                                    gazebo_camera_rgb_optical_frame:
+                                      {}
+                                gripper_cutter_link:
+                                  {}
+                                gripper_suction_link:
+                                  {}
+                                pi_camera_link:
+                                  {}
+                                tongue_link:
+                                  {}
+              left_caster:
+                left_wheel:
+                  {}
+              left_front_wheel:
+                {}
+              right_caster:
+                right_wheel:
+                  {}
+              right_front_wheel:
+                {}
+      Update Interval: 0
+      Value: true
+    - Alpha: 1
+      Class: rviz/RobotModel
+      Collision Enabled: false
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        base:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        ee_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        forearm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gazebo_camera_depth_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        gazebo_camera_depth_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        gazebo_camera_rgb_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        gazebo_camera_rgb_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        gripper_cutter_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        gripper_suction_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        harvey_base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        harvey_chassis:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        harvey_lift_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        left_caster:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        left_front_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        pi_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        right_caster:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        right_front_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        shoulder_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        tongue_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        upper_arm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        wrist_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        wrist_2_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        wrist_3_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+      Name: RobotModel
+      Robot Description: robot_description
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+    - Class: rviz/SetInitialPose
+      Topic: /initialpose
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+    - Class: rviz/PublishPoint
+      Single click: true
+      Topic: /clicked_point
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 3.80689287
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.0599999987
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.0500000007
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.00999999978
+      Pitch: 0.735397935
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+      Yaw: 0.355395526
+    Saved: ~
+Window Geometry:
+  Camera 0:
+    collapsed: false
+  Camera 1:
+    collapsed: false
+  Camera 2:
+    collapsed: false
+  Camera 3:
+    collapsed: false
+  Camera 4:
+    collapsed: false
+  Camera 5:
+    collapsed: false
+  Camera 6:
+    collapsed: false
+  Camera 7:
+    collapsed: false
+  Camera 8:
+    collapsed: false
+  Displays:
+    collapsed: false
+  Height: 1056
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Image:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000004000000000000032900000396fc0200000025fc0000002800000396000000f50100001dfa000000000100000002fb000000100044006900730070006c0061007900730100000000ffffffff0000016a00fffffffb0000000a005600690065007700730100000000000003290000010f00fffffffb0000001200530065006c0065006300740069006f006e00000001e10000009b0000006100fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000000a0049006d00610067006502000002df000001e00000010e00000120fb0000000a0049006d00610067006502000001cf000000be0000010b00000122fb0000000a0049006d00610067006502000000c1000003030000010d00000110fb0000000a0049006d00610067006502000002df000000be0000010d00000120fb0000000a0049006d00610067006502000002dc000003040000010800000110fb0000000a0049006d00610067006502000000c0000000be0000010d00000121fb0000000a0049006d00610067006502000001cf000001e20000010c00000121fb0000000a0049006d00610067006502000001d1000003020000010d0000010dfb0000000a0049006d00610067006502000000ba000001e60000011200000119fb0000000a0049006d00610067006503000001cd000000bf0000010f0000011efb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000000a0049006d0061006700650000000028000003960000000000000000fb0000001000430061006d0065007200610020003002000006be000001c100000091000000abfb0000001000430061006d00650072006100200031020000062d000001c00000008d000000acfb0000001000430061006d006500720061002000320200000596000001bd00000092000000acfb0000001000430061006d0065007200610020003302000006be0000026e00000090000000a3fb0000001000430061006d00650072006100200034020000062a0000026e00000092000000a3fb0000001000430061006d0065007200610020003502000005960000026b00000091000000a7fb0000001000430061006d0065007200610020003603000006bf0000031400000091000000a5fb0000001000430061006d00650072006100200037020000062b0000031500000090000000a4fb0000001000430061006d0065007200610020003802000005970000031400000090000000a5000000010000024100000396fc0200000002fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000001200530065006c0065006300740069006f006e010000025a000000b20000000000000000000000020000073f000000a9fc0100000002fb0000000a0049006d00610067006503000001cc000003050000010e0000010dfb0000000a00560069006500770073030000004e00000080000002e100000197000000030000073f0000003efc0100000002fb0000000800540069006d006501000000000000073f0000030000fffffffb0000000800540069006d00650100000000000004500000000000000000000004100000039600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  Time:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1855
+  X: 65
+  Y: 24
