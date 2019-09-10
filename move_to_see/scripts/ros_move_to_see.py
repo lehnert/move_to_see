@@ -43,9 +43,12 @@ import scipy
 import scipy.sparse.linalg
 import scipy.linalg
 
+import torch
 
 import rospy
 from tf.transformations import quaternion_from_euler
+
+from torchvision import transforms
 
 #import pylab as plb
 
@@ -158,10 +161,14 @@ class move_to_see:
         self.counts = []
         self.accum_step_size = 0.0
         self.gradients = []
+        self.vanilla_gradients = []
         self.avg_abs_gradient_plot = []
         self.grad_x = []
         self.grad_y = []
         self.grad_z = []
+        self.van_grad_x = []
+        self.van_grad_y = []
+        self.van_grad_z = []
         self.avg_abs_gradient_queue = deque(1e5*np.ones(self.queue_size))
         self.abs_gradient = 1e5
         self.avg_abs_gradient = 1e5
@@ -402,7 +409,14 @@ class move_to_see:
 
         return dRoll,dPitch
 
-    def execute(self, move_robot):
+    def execute(self, move_robot, CNN_model=None, device=None):
+
+        if CNN_model is not None:
+            trans_image = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])]) # as per resnet18
 
         print ('Executing servo loop')
         print "\n"
@@ -437,7 +451,6 @@ class move_to_see:
                 self.images[i].append(camera_images[i])
                 self.objects[i].append(objects[i])
 
-            delta_flat = np.delete(delta_matrix.reshape((1,9)),4,None)
 
             #print ('Numerical deltas: \n')
             #print (delta_matrix)
@@ -452,10 +465,24 @@ class move_to_see:
                 break
             else:
 
-                numerical_derivative = np.divide(delta_flat,self.camera_vector_mags)
 
-                self.gradient = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
+                if CNN_model is not None:
+                    ref_image = camera_images[4]
+                    ref_image_t = trans_image(ref_image).unsqueeze(0).to(device)    # transform image, then add dim and load to gpu
+                    # process image to get target, then unload from gpu, decouple backprop gradients, convert to array and reshape result.
+                    grad_CNN = CNN_model(ref_image_t).cpu().detach().numpy().astype(np.float64)
+                    #grad_MTS = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
+                    print "Computed gradient using CNN"
+                    self.gradient = grad_CNN
+
+                    # else:
+                delta_flat = np.delete(delta_matrix.reshape((1,9)),4,None)
+                numerical_derivative = np.divide(delta_flat,self.camera_vector_mags)
+                self.vanilla_gradient = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
+
                 self.gradients.append(self.gradient)
+                self.vanilla_gradients.append(self.vanilla_gradient)
+
 
 
                 dRoll, dPitch = self.compute_roll_pitch(self.x_ref.blob_centre)
@@ -549,6 +576,7 @@ class move_to_see:
                     plt.subplot(211)
                     plt.plot(self.counts,self.ref_pixel_sizes,'r')
 
+
                     plt.subplot(212)
                     plt.plot(self.counts,self.ref_manips,'b')
 
@@ -564,18 +592,25 @@ class move_to_see:
                     self.grad_y.append(self.gradient[0,1])
                     self.grad_z.append(self.gradient[0,2])
 
+                    self.van_grad_x.append(self.vanilla_gradient[0,0])
+                    self.van_grad_y.append(self.vanilla_gradient[0,1])
+                    self.van_grad_z.append(self.vanilla_gradient[0,2])
+
 
                     plt.figure(1)
                     self.fig.clf()
 
                     plt.subplot(231)
                     plt.plot(self.counts,self.grad_x,'r')
+                    plt.plot(self.counts,self.van_grad_x,'g')
 
                     plt.subplot(232)
-                    plt.plot(self.counts,self.grad_y,'g')
+                    plt.plot(self.counts,self.grad_y,'r')
+                    plt.plot(self.counts,self.van_grad_y,'g')
 
                     plt.subplot(233)
-                    plt.plot(self.counts,self.grad_z,'b')
+                    plt.plot(self.counts,self.grad_z,'r')
+                    plt.plot(self.counts,self.van_grad_z,'g')
 
                     plt.subplot(234)
                     plt.plot(self.counts,self.ref_pixel_sizes,'r')
