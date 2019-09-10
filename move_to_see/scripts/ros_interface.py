@@ -59,7 +59,7 @@ from move_to_see_msgs.msg import moveToSee
 
 import cv2
 from std_msgs.msg import String
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 import message_filters
 from cv_bridge import CvBridge, CvBridgeError
 import tf2_geometry_msgs
@@ -95,11 +95,16 @@ class ros_interface:
         self.move_to_see_msg.header.frame_id = "/move_to_see"
 
         hsv_hue_low = rospy.get_param("~hsv_hue_low",0)
-        hsv_hue_high = rospy.get_param("~hsv_hue_high",10)
+        hsv_hue_high = rospy.get_param("~hsv_hue_high",12)
         hsv_sat_low = rospy.get_param("~hsv_sat_low",120)
         hsv_sat_high = rospy.get_param("~hsv_sat_high",255)
         hsv_val_low = rospy.get_param("~hsv_val_low",50)
         hsv_val_high = rospy.get_param("~hsv_val_high",255)
+
+        self.normalise_pixels = rospy.get_param("~normalise_pixels",True)
+
+        self.image_width = rospy.get_param("~image_width",224)
+        self.image_height =  rospy.get_param("~image_height",224)
 
         hsv_thresholds_low = np.array([hsv_hue_low, hsv_sat_low, hsv_val_low])
         hsv_thresholds_high = np.array([hsv_hue_high, hsv_sat_high, hsv_val_high])
@@ -139,27 +144,31 @@ class ros_interface:
 
 
         self.move_pose_service_name = '/harvey_robot/move_harvey_pose_array'
+        self.move_to_named_service_name = '/harvey_robot/move_harvey_named'
         self.get_jacobian_service_name = '/harvey_robot/get_jacobian'
         self.get_manipulability_service_name = '/harvey_robot/get_manipulability'
 
+        self.joint_state_topic = '/joint_states'
 
-        rospy.loginfo('Waiting for service %s to come online ...' % self.move_pose_service_name)
-
-        self.move_to_named_service_name = '/harvey_robot/move_harvey_named'
-        rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
+        rospy.loginfo('Waiting for service %s to come online ...' % self.get_jacobian_service_name)
 
         try:
+            rospy.loginfo('Waiting for service %s to come online ...' % self.move_pose_service_name)
             rospy.wait_for_service(self.move_pose_service_name)
             self.move_pose_service = rospy.ServiceProxy(self.move_pose_service_name,harvey_msgs.srv.move_harvey_pose_array)
             #self.move_pose_service = rospy.ServiceProxy(self.move_pose_service_name, harvey_msgs.srv.move_harvey_pose)
 
+            rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
             rospy.wait_for_service(self.move_to_named_service_name)
             self.move_named_service = rospy.ServiceProxy(self.move_to_named_service_name,
                                         harvey_msgs.srv.move_harvey_named)
 
-            #rospy.wait_for_service(self.get_jacobian_service_name)
-            #self.get_jacobian_service = rospy.ServiceProxy(self.get_jacobian_service_name,
-            #                            harvey_msgs.srv.getJacobian)
+            rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
+            rospy.wait_for_service(self.get_jacobian_service_name)
+            self.get_jacobian_service = rospy.ServiceProxy(self.get_jacobian_service_name,
+                                       harvey_msgs.srv.getJacobian)
+
+            self.joint_state_sub = rospy.Subscriber(self.joint_state_topic, JointState, self.joint_state_cb)
 
             #rospy.wait_for_service(self.get_manipulability_service_name)
             #self.get_manipulability_service = rospy.ServiceProxy(self.get_manipulability_service_name,
@@ -169,10 +178,15 @@ class ros_interface:
             #for i in range(0,self.nCameras):
             #    self.image_sub.append(rospy.Subscriber("/pi_camera_"+str(i)+"/rgb_segmented_image",Image,self.image_callback, i))
 
-        except:
-            rospy.logerr('Service %s not available. Restart and try again.' % service_name)
+        except rospy.ServiceException, e:
+            rospy.logerr('Service %s not available. Restart and try again.'% e)
 
-    def publish_data(pixel_sizes,pixel_sizes_unfiltered,ref_size, count):
+    def joint_state_cb(self,data):
+
+        self.joint_state = data
+
+
+    def publish_data(self,pixel_sizes,pixel_sizes_unfiltered,ref_size, count):
 
         self.move_to_see_msg.header.stamp = rospy.Time.now()
         self.move_to_see_msg.header.seq = self.count
@@ -318,6 +332,8 @@ class ros_interface:
            # Convert BGR to HSV
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
+        hsv = cv2.GaussianBlur(hsv,(5,5),0)
+
         # Threshold the HSV image to get only blue colors
         mask1 = cv2.inRange(hsv, self.lower_red, self.upper_red)
         mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
@@ -370,7 +386,11 @@ class ros_interface:
 
                 self.blob_centres[i] = (object['centre_x'], object['centre_y'])
 
-                self.pixel_sizes[i] = object['size']/float(640*480)
+                #divide by maximum pixel size
+                if(self.normalise_pixels):
+                    self.pixel_sizes[i] = object['size']/float(self.image_width*self.image_height)
+                else:
+                    self.pixel_sizes[i] = object['size']
 
                 #keep a sliding window of sizes for filtering
                 self.pixel_sizes_buffer[i].append(copy.deepcopy(self.pixel_sizes[i]))
@@ -389,14 +409,14 @@ class ros_interface:
 
         self.new_camera_data = False
 
-        row_1 = np.hstack((self.cv_image_array[0], self.cv_image_array[1], self.cv_image_array[2]))
-        row_2 = np.hstack((self.cv_image_array[3], self.cv_image_array[4], self.cv_image_array[5]))
-        row_3 = np.hstack((self.cv_image_array[6], self.cv_image_array[7], self.cv_image_array[8]))
+        row_1 = np.hstack((self.cv_image_array[2], self.cv_image_array[1], self.cv_image_array[0]))
+        row_2 = np.hstack((self.cv_image_array[5], self.cv_image_array[4], self.cv_image_array[3]))
+        row_3 = np.hstack((self.cv_image_array[8], self.cv_image_array[7], self.cv_image_array[6]))
         image_matrix = np.vstack((row_1, row_2, row_3))
 
-        seg_row_1 = np.hstack((segmentedImage_array[0], segmentedImage_array[1], segmentedImage_array[2]))
-        seg_row_2 = np.hstack((segmentedImage_array[3], segmentedImage_array[4], segmentedImage_array[5]))
-        seg_row_3 = np.hstack((segmentedImage_array[6], segmentedImage_array[7], segmentedImage_array[8]))
+        seg_row_1 = np.hstack((segmentedImage_array[2], segmentedImage_array[1], segmentedImage_array[0]))
+        seg_row_2 = np.hstack((segmentedImage_array[5], segmentedImage_array[4], segmentedImage_array[3]))
+        seg_row_3 = np.hstack((segmentedImage_array[8], segmentedImage_array[7], segmentedImage_array[6]))
         seg_image_matrix = np.vstack((seg_row_1, seg_row_2, seg_row_3))
 
         cv2.imshow("Images", image_matrix)
@@ -549,15 +569,15 @@ class ros_interface:
 
         return response.manipulability
 
-    def getJacobian(self,joint_values):
+    def getJacobian(self):
 
-        joint_state = sensor_msgs.msg.JointState()
+        # joint_state = sensor_msgs.msg.JointState()
+        #
+        # joint_state.position =
 
-        joint_state.position = joint_values
+        response = self.get_jacobian_service("harvey_pi_camera",self.joint_state)
 
-        response = self.get_jacobian_service("harvey_pi_camera",joint_state)
-
-        print "Response: ", response
+        # print "Response: ", response
 
         rows = response.rows
         cols = response.cols
@@ -568,7 +588,7 @@ class ros_interface:
 
         jacobian = jacobian.reshape((rows,cols))
 
-        print "Jacobian: ", jacobian
+        print "Jacobian: \n", jacobian
 
         return jacobian
 
@@ -576,6 +596,19 @@ class ros_interface:
     def calcManipulability(self, jacobian):
 
         return math.sqrt(np.linalg.det(np.matmul(jacobian,jacobian.transpose())))
+
+
+    def servoCamera(self,velocity,move_group="harvey_pi_camera", frame_id="pi_camera_link", velocity_scale=0.2):
+
+        jacobian = self.getJacobian()
+        # q = np.array(self.joint_states.position)
+        # q = q.reshape((7,1))
+
+        inv_jacobian = np.linalg.pinv(jacobian)
+
+        q_vel = np.matmul(inv_jacobian,velocity)
+
+        print q_vel
 
 
 

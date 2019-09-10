@@ -48,17 +48,20 @@ if __name__=="__main__":
 
     rospy.init_node("test")
 
-    mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=0.75,max_pixel=0.4,max_count=200)
+    mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=0.75,max_pixel=0.4,max_count=100)
     mvs.initCameraPosition()
+
+    # print "Setting arm to initial position"
+    # if not mvs.interface.movetoNamedPose("harvey_arm","move_to_see_start_v4", 0.4):
+    #     print "failed to reset robot arm"
+    #     exit()
+
+    data = mvs.execute(move_robot=False)
 
     print "Setting arm to initial position"
     if not mvs.interface.movetoNamedPose("harvey_arm","move_to_see_start_v4", 0.4):
         print "failed to reset robot arm"
         exit()
-
-    data = mvs.execute(move_robot=True)
-
-
 
     path = "/home/chris/move_to_see_data"
 

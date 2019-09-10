@@ -115,10 +115,12 @@ class move_to_see:
 
         #change to be user definable
         elif self.interface.type == "ROS":
-            self.image_width = 640
-            self.image_height = 480
-            self.image_cx = 320
-            self.image_cy = 240
+
+            self.image_width = rospy.get_param("~image_width",224)
+            self.image_height =  rospy.get_param("~image_height",224)
+
+            self.image_cx = round(self.image_width/2)
+            self.image_cy = round(self.image_height/2)
             self.FOV_x = 62.2
             self.FOV_y = 48.8
 
@@ -156,6 +158,7 @@ class move_to_see:
         self.counts = []
         self.accum_step_size = 0.0
         self.gradients = []
+        self.avg_abs_gradient_plot = []
         self.grad_x = []
         self.grad_y = []
         self.grad_z = []
@@ -379,19 +382,8 @@ class move_to_see:
 
     def compute_roll_pitch(self, blob_centre):
 
-        if self.interface.type == "VREP":
-            image_width = 1
-            image_height = 1
-            image_cx = 0.5
-            image_cy = 0.5
-        elif self.interface.type == "ROS":
-            image_width = 640
-            image_height = 480
-            image_cx = 320
-            image_cy = 240
-
-        delta_x = (blob_centre[0] - self.image_cx)/image_width
-        delta_y = (blob_centre[1] - self.image_cy)/image_height
+        delta_x = (blob_centre[0] - self.image_cx)/self.image_width
+        delta_y = (blob_centre[1] - self.image_cy)/self.image_height
 
         #print ("Blob centre x = ", blob_centre[0])
         #print ("Blob centre y = ", blob_centre[1])
@@ -419,7 +411,7 @@ class move_to_see:
 
         if self.interface.type == "ROS":
             use_noise = False
-            rate = rospy.Rate(10) # 100hz
+            rate = rospy.Rate(20) # 100hz
 
 
 
@@ -451,6 +443,10 @@ class move_to_see:
             #print (delta_matrix)
             #print "\n"
 
+            # self.interface.getJacobian()
+            # velocity = np.array([1,0,0,0,0,0])
+            # self.interface.servoCamera(velocity.reshape((6,1)))
+
             if (np.sum(delta_matrix) == 0.0):
                 print "delta matrix = 0, stopping"
                 break
@@ -460,6 +456,7 @@ class move_to_see:
 
                 self.gradient = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
                 self.gradients.append(self.gradient)
+
 
                 dRoll, dPitch = self.compute_roll_pitch(self.x_ref.blob_centre)
 
@@ -475,6 +472,8 @@ class move_to_see:
                 self.avg_abs_gradient_queue.appendleft(self.abs_gradient)
                 self.avg_abs_gradient_queue.pop()
 
+                self.avg_abs_gradient_plot.append(self.avg_abs_gradient)
+
                 pose_delta = self.step_size*self.gradient
 
                 ##################################################
@@ -483,7 +482,7 @@ class move_to_see:
                     # pose = [0,0,0.1]
                     #q = quaternion_from_euler(0,0,0)
                     # q = quaternion_from_euler(-dRoll/2,-dPitch/2,0)
-                    q = quaternion_from_euler(-dRoll/10,-dPitch/10,0)
+                    q = quaternion_from_euler(dRoll/5,-dPitch/5,0)
                     #q = quaternion_from_euler(-dRoll,0,0)
 
                     #pose_delta[0,0] = 0
@@ -499,9 +498,9 @@ class move_to_see:
 
                     print "Pose delta = ", pose_delta
                     print "Roll: ", dRoll
-                    print "Roll: ", dPitch
+                    print "Pitch: ", dPitch
                     if(move_robot):
-                        raw_input("Press Enter to move robot one step...")
+                        # raw_input("Press Enter to move robot one step...")
                         self.interface.servoPose(pose_delta)
 
                     ee_pose = self.interface.getCurrentPose()
@@ -569,14 +568,20 @@ class move_to_see:
                     plt.figure(1)
                     self.fig.clf()
 
-                    plt.subplot(311)
+                    plt.subplot(231)
                     plt.plot(self.counts,self.grad_x,'r')
 
-                    plt.subplot(312)
+                    plt.subplot(232)
                     plt.plot(self.counts,self.grad_y,'g')
 
-                    plt.subplot(313)
+                    plt.subplot(233)
                     plt.plot(self.counts,self.grad_z,'b')
+
+                    plt.subplot(234)
+                    plt.plot(self.counts,self.ref_pixel_sizes,'r')
+
+                    plt.subplot(235)
+                    plt.plot(self.counts,self.avg_abs_gradient_plot,'b')
 
                     self.fig.canvas.draw()
                     self.fig.canvas.flush_events()
