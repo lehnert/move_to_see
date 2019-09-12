@@ -58,10 +58,10 @@ if __name__=="__main__":
 
     data = mvs.execute(move_robot=False)
 
-    print "Setting arm to initial position"
-    if not mvs.interface.movetoNamedPose("harvey_arm","move_to_see_start_v4", 0.4):
-        print "failed to reset robot arm"
-        exit()
+    # print "Setting arm to initial position"
+    # if not mvs.interface.movetoNamedPose("harvey_arm","move_to_see_start_v4", 0.4):
+    #     print "failed to reset robot arm"
+    #     exit()
 
     path = "/home/chris/move_to_see_data"
 

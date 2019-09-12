@@ -50,6 +50,7 @@ import tf
 import tf2_ros
 import harvey_msgs.srv
 import sensor_msgs
+
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PoseArray
@@ -58,13 +59,16 @@ from move_to_see_msgs.msg import moveToSee
 #import pylab as plb
 
 import cv2
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 from sensor_msgs.msg import Image, JointState
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import message_filters
 from cv_bridge import CvBridge, CvBridgeError
 import tf2_geometry_msgs
 import threading
 import rospy
+
+np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
 
 class ros_interface:
 
@@ -88,11 +92,17 @@ class ros_interface:
         self.listener = tf2_ros.TransformListener(self.tfBuffer)
 
         self.publisher = rospy.Publisher("/move_to_see_data", moveToSee, queue_size=10)
+
+        self.ur_speed_publisher = rospy.Publisher("/ur_driver/joint_speed", JointTrajectory, queue_size=1)
+        self.lift_vel_publisher = rospy.Publisher("/lift_vel_command", Float32, queue_size=1)
+
         self.move_to_see_msg = moveToSee()
         self.move_to_see_msg.nCameras = number_of_cameras
         self.move_to_see_msg.header.stamp = rospy.Time.now()
         self.move_to_see_msg.header.seq = 0
         self.move_to_see_msg.header.frame_id = "/move_to_see"
+
+        self.max_contour_size = rospy.get_param("~max_contour_size",500)
 
         hsv_hue_low = rospy.get_param("~hsv_hue_low",0)
         hsv_hue_high = rospy.get_param("~hsv_hue_high",12)
@@ -211,6 +221,32 @@ class ros_interface:
                     list_of_objects[i].append(0.0)
         return list_of_objects
 
+    def publishSpeedCommands(self,velocity):
+
+        jt_msg = JointTrajectory()
+        jt_msg.header.frame_id = 'harvey_base_link'
+        jt_msg.header.stamp = rospy.Time.now()
+        jt_msg.joint_names = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint',
+  'wrist_2_joint', 'wrist_3_joint']
+
+        new_vel_point = JointTrajectoryPoint()
+
+        print velocity.shape
+        new_vel_point.velocities = velocity[1:7,0].tolist()
+
+        print new_vel_point.velocities
+
+        jt_msg.points.append(new_vel_point)
+
+        lift_vel_msg = Float32(velocity[0,0])
+
+        self.lift_vel_publisher.publish(lift_vel_msg)
+
+        print jt_msg
+        self.ur_speed_publisher.publish(jt_msg)
+
+
+
 
     def getCameraImage(self, id):
 
@@ -261,7 +297,8 @@ class ros_interface:
 
         try:
             for i in range(0,self.nCameras):
-                self.cv_image_array[i] = cv2.flip( self.bridge.imgmsg_to_cv2(image_array[i], desired_encoding="passthrough"), 0 )
+                self.cv_image_array[i] = cv2.flip( self.bridge.imgmsg_to_cv2(image_array[i], desired_encoding="passthrough"), -1 )
+                # self.cv_image_array[i] = cv2.flip( self.bridge.imgmsg_to_cv2(image_array[i], desired_encoding="passthrough"), 0 ) #pre experiment training
                 self.got_image_array[i] = True
         except CvBridgeError as e:
             print(e)
@@ -351,7 +388,7 @@ class ros_interface:
             #find the biggest area
             cnt = max(contours, key = cv2.contourArea)
             pixel_size = cv2.contourArea(cnt)
-            if pixel_size > 1000:
+            if pixel_size > self.max_contour_size:
                 M = cv2.moments(cnt)
                 cx = int(M['m10']/M['m00'])
                 cy = int(M['m01']/M['m00'])
@@ -422,7 +459,7 @@ class ros_interface:
         cv2.imshow("Images", image_matrix)
         cv2.imshow("Segmented Images", seg_image_matrix)
 
-        cv2.waitKey(30)
+        cv2.waitKey(1)
 
         ret_images = copy.deepcopy(self.cv_image_array)
 
@@ -569,11 +606,13 @@ class ros_interface:
 
         return response.manipulability
 
+
     def getJacobian(self):
 
         # joint_state = sensor_msgs.msg.JointState()
         #
         # joint_state.position =
+        print self.joint_state
 
         response = self.get_jacobian_service("harvey_pi_camera",self.joint_state)
 
@@ -586,9 +625,13 @@ class ros_interface:
 
         jacobian = np.asarray(jacobian_vector)
 
-        jacobian = jacobian.reshape((rows,cols))
+        jacobian = jacobian.reshape((cols,rows)).transpose()
 
-        print "Jacobian: \n", jacobian
+        print jacobian.shape
+
+        print "Jacobian: \n"
+        print(np.matrix(jacobian))
+        # print('\n'.join([''.join(['{:4}'.format(item) for item in row]) for row in jacobian]))
 
         return jacobian
 
@@ -601,15 +644,35 @@ class ros_interface:
     def servoCamera(self,velocity,move_group="harvey_pi_camera", frame_id="pi_camera_link", velocity_scale=0.2):
 
         jacobian = self.getJacobian()
+
+        #test forward jacobian
+        # q_dot = np.array([0.1,0,0,0,0,0,0])
+        # x_dot = np.matmul(jacobian,q_dot)
+        # print "xdot: \n", x_dot
+
         # q = np.array(self.joint_states.position)
         # q = q.reshape((7,1))
 
+
         inv_jacobian = np.linalg.pinv(jacobian)
 
-        q_vel = np.matmul(inv_jacobian,velocity)
+        condition_jacobian = np.linalg.cond(jacobian)
+        condition_inv_jacobian = np.linalg.cond(inv_jacobian)
 
-        print q_vel
+        # inv_jacobian2 = scipy.linalg.pinv(jacobian)
+        # inv_jacobian3 = scipy.linalg.pinv2(jacobian)
 
+        print "Inverse Jacobian: \n"
+        print(np.matrix(inv_jacobian))
+
+        q_dot = np.matmul(inv_jacobian,velocity)
+
+        print "q_dot: \n", q_dot
+
+        print "jacobian condition: ", condition_jacobian, "\n"
+        print "jacobian inv condition: ", condition_inv_jacobian, "\n"
+
+        self.publishSpeedCommands(q_dot)
 
 
     def servoPose(self, pose, move_group="harvey_pi_camera", frame_id="pi_camera_link", velocity_scale=0.2):

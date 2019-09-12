@@ -169,9 +169,9 @@ class move_to_see:
         self.van_grad_x = []
         self.van_grad_y = []
         self.van_grad_z = []
-        self.avg_abs_gradient_queue = deque(1e5*np.ones(self.queue_size))
-        self.abs_gradient = 1e5
-        self.avg_abs_gradient = 1e5
+        self.avg_abs_gradient_queue = deque(50*np.ones(self.queue_size))
+        self.abs_gradient = 50
+        self.avg_abs_gradient = 50
 
     def reset(self):
 
@@ -185,9 +185,9 @@ class move_to_see:
         self.counts = []
         self.accum_step_size = 0.0
         self.gradients = []
-        self.avg_abs_gradient_queue = deque(1e5*np.ones(self.queue_size))
-        self.abs_gradient = 1e5
-        self.avg_abs_gradient = 1e5
+        self.avg_abs_gradient_queue = deque(50*np.ones(self.queue_size))
+        self.abs_gradient = 50
+        self.avg_abs_gradient = 50
 
 
     def setObjectiveFunctionWeights(self,size_weight,manip_weight):
@@ -425,7 +425,7 @@ class move_to_see:
 
         if self.interface.type == "ROS":
             use_noise = False
-            rate = rospy.Rate(20) # 100hz
+            rate = rospy.Rate(50) # 100hz
 
 
 
@@ -457,7 +457,9 @@ class move_to_see:
             #print "\n"
 
             # self.interface.getJacobian()
-            # velocity = np.array([1,0,0,0,0,0])
+            # velocity = np.array([0.0,0,0,0,0,0,-0.6])
+            # velocity = velocity.reshape((7,1))
+            # self.interface.publishSpeedCommands(velocity)
             # self.interface.servoCamera(velocity.reshape((6,1)))
 
             if (np.sum(delta_matrix) == 0.0):
@@ -479,6 +481,9 @@ class move_to_see:
                 delta_flat = np.delete(delta_matrix.reshape((1,9)),4,None)
                 numerical_derivative = np.divide(delta_flat,self.camera_vector_mags)
                 self.vanilla_gradient = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
+
+                if CNN_model is None:
+                    self.gradient = self.vanilla_gradient
 
                 self.gradients.append(self.gradient)
                 self.vanilla_gradients.append(self.vanilla_gradient)
@@ -508,8 +513,8 @@ class move_to_see:
                 if self.interface.type == "ROS":
                     # pose = [0,0,0.1]
                     #q = quaternion_from_euler(0,0,0)
-                    # q = quaternion_from_euler(-dRoll/2,-dPitch/2,0)
-                    q = quaternion_from_euler(dRoll/5,-dPitch/5,0)
+                    q = quaternion_from_euler(-dRoll/2,-dPitch/2,0)
+                    # q = quaternion_from_euler(dRoll/5,-dPitch/5,0) #works with incorrect flipped
                     #q = quaternion_from_euler(-dRoll,0,0)
 
                     #pose_delta[0,0] = 0
