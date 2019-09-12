@@ -59,7 +59,7 @@ class Xtype:
 
 class move_to_see:
 
-    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15,max_count=50):
+    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15,max_count=50, velocity_scale=0.2):
 
 
         self.nCameras = number_of_cameras
@@ -79,6 +79,8 @@ class move_to_see:
         #clientID=vrep.simxStart('127.0.0.1',19997,True,True,5000,5) # Connect to V-REP
 
         self.set_orientation = True
+
+        self.velocity_scale = velocity_scale
 
         self.noise_std = 0.001
 
@@ -445,7 +447,10 @@ class move_to_see:
 
             # raw_input("Press Enter to continue...")
 
+            t = time.time()
             delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
+            dt = time.time() - t
+            print "Time to get Derivatives: ", dt
 
             for i in range(0,self.nCameras):
                 self.images[i].append(camera_images[i])
@@ -533,10 +538,16 @@ class move_to_see:
                     print "Pitch: ", dPitch
                     if(move_robot):
                         # raw_input("Press Enter to move robot one step...")
-                        self.interface.servoPose(pose_delta)
+                        t = time.time()
+                        self.interface.servoPose(pose_delta, velocity_scale=self.velocity_scale)
+                        dt = time.time() - t
+                        print "Time to servo to pose: ", dt
 
+                    t = time.time()
                     ee_pose = self.interface.getCurrentPose()
                     self.ee_poses.append(ee_pose)
+                    dt = time.time() - t
+                    print "Time to get current pose: ", dt
 
                     #self.interface.publish_data(pixel_sizes,pixel_sizes_unfiltered,self.x_ref.pixel_size, self.count)
 

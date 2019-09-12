@@ -50,7 +50,7 @@ if __name__=="__main__":
 
     rospy.init_node("test")
 
-    mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=1.5,max_pixel=0.4,max_count=100)
+    mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=1.5,max_pixel=0.4,max_count=100, velocity_scale=1.5)
     mvs.initCameraPosition()
 
     # print "Setting arm to initial position"
@@ -59,6 +59,7 @@ if __name__=="__main__":
         exit()
 
     pose_backwards = [0.0,0.0,-0.05,0.0,0.0,0.0,1.0]
+
     mvs.interface.servoPose(pose_backwards, move_group="harvey_pi_camera", frame_id="pi_camera_link", velocity_scale=0.2)
     #
     # self.interface.servoPose(pose_down, "harvey_arm", "pi_camera_link", 0.2)
@@ -80,9 +81,9 @@ if __name__=="__main__":
         print "failed to reset robot arm"
         exit()
 
-    path = "/home/chris/move_to_see_data/training_data_for_experiment/"
+    path = "/home/agperson/move_to_see_data/training_data_for_experiment/"
 
-    file_name = path + "/default_lighting_" + time.strftime("%Y_%m_%d-%H_%M_%S")
+    file_name = path + "/not_valid" + time.strftime("%Y_%m_%d-%H_%M_%S")
 
     scipy.io.savemat(file_name+".mat", data)
 

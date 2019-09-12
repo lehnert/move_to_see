@@ -82,8 +82,8 @@ class ros_interface:
 
         # self.move_group = move_group
         self.min_path_completion = 0.5
-        self.max_attempts = 3
-        self.max_planning_time = 1.0
+        self.max_attempts = 1
+        self.max_planning_time = 0.1
         self.nCameras = number_of_cameras
         self.new_camera_data = False
 
@@ -682,6 +682,8 @@ class ros_interface:
         ros_pose_array.header.frame_id = "harvey_base_link"
         ros_pose_array.header.stamp = rospy.Time.now()
 
+
+
         poseStamped = PoseStamped()
 
         poseStamped.pose.position.x = pose[0]
@@ -695,13 +697,15 @@ class ros_interface:
         poseStamped.header.frame_id = frame_id
         ros_pose_array.header.stamp = rospy.Time.now()
 
+        t = time.time()
         try:
             #t = self.tf_listener.getLatestCommonTime("harvey_base_link", frame_id)
 
-            trans = self.tfBuffer.lookup_transform("harvey_base_link", frame_id, rospy.Time(0), rospy.Duration(1.0))
+            trans = self.tfBuffer.lookup_transform("harvey_base_link", frame_id, rospy.Time(0), rospy.Duration(0.1))
 
             #trans = self.tf_listener.lookupTransform("harvey_base_link", frame_id, t)
             transformed_pose = tf2_geometry_msgs.do_transform_pose(poseStamped, trans)
+
 
 
 
@@ -710,6 +714,9 @@ class ros_interface:
             print(e)
             rospy.logerr('FAILED TO GET TRANSFORM FROM %s to %s' % (to_frame, from_frame))
             return None
+
+        dt = time.time() - t
+        print "Time to find transform: ", dt
 
         #ros_pose = Pose()
         #ros_pose.position.x = pose[0]
@@ -720,20 +727,24 @@ class ros_interface:
         #ros_pose.orientation.z = pose[5]
         #ros_pose.orientation.w = pose[6]
 
-        transformed_pose.pose.position.z = transformed_pose.pose.position.z - 0.011
+        transformed_pose.pose.position.z = transformed_pose.pose.position.z - 0.009
 
         ros_pose_array.poses.append(transformed_pose.pose)
 
         #print ("pose: \n")
         #print transformed_pose
         #print "\n"
-
+        t = time.time()
+        print "Velocity of move: ", velocity_scale
         # rospy.loginfo('Trying to move robot\'s %s. Goal is named pose: %s' % (self.movegroup, ros_pose))
         if self.move_pose_service(move_group, ros_pose_array, velocity_scale, self.min_path_completion, self.max_attempts, self.max_planning_time).success:
+            dt = time.time() - t
+            print "Time to perform service call: ", dt
             return True
         else:
             print ('servoing failed')
             return False
+
         # res,retInts,robotInitialState,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getRobotState',[robot_handle],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
 
 
