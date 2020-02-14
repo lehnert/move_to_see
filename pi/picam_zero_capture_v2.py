@@ -79,7 +79,7 @@ class piCamera:
 
         # for i in range(0,100):
         print("Capturing Image")
-	image = self.capture(self.camera)
+	    image = self.capture(self.camera)
 
     	#start = time.time()
         if self.detect_objects:
@@ -205,9 +205,6 @@ class piCamera:
 
         output_image = np.empty((width*height*3), dtype=np.uint8)
         camera.capture(output_image, 'bgr', use_video_port=True)
-        # print('Captured image')
-        # print('Captured %dx%d image' % (
-            # output_image.array.shape[1], output_image.array.shape[0]))
         output_image = output_image.reshape((height, width, 3))
         return output_image
 

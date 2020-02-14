@@ -43,12 +43,7 @@ import scipy
 import scipy.sparse.linalg
 import scipy.linalg
 
-import torch
 
-import rospy
-from tf.transformations import quaternion_from_euler
-
-from torchvision import transforms
 
 #import pylab as plb
 
@@ -61,20 +56,22 @@ class move_to_see:
 
     def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15,max_count=50, velocity_scale=0.2):
 
-
         self.nCameras = number_of_cameras
-
-
 
         if interface == "ROS":
             print ('Creating ros interface')
+            import rospy
+            from tf.transformations import quaternion_from_euler
             import ros_interface as ri
+            import torch
+            from torchvision import transforms
             self.interface = ri.ros_interface(number_of_cameras)
         elif interface == "VREP":
             print ('Creating vrep interface')
             import vrep_interface as vi
             self.interface = vi.vrep_interface(number_of_cameras)
             self.interface.start_sim()
+
         #vrep.simxFinish(-1) # just in case, close all opened connections
         #clientID=vrep.simxStart('127.0.0.1',19997,True,True,5000,5) # Connect to V-REP
 
@@ -263,7 +260,7 @@ class move_to_see:
             if self.interface.type == "ROS":
                 manip_diff = 0
             else:
-                manip_diff = (x2.manip - x1.manip) / x1.manip
+                manip_diff = 0  # use to be (x2.manip - x1.manip) / x1.manip
 
             total_delta = size_weight*norm_pixel_diff + manip_weight*manip_diff
             ref_objective_value = size_weight*x1.pixel_size + manip_weight*x1.manip
@@ -273,13 +270,13 @@ class move_to_see:
 
         return total_delta, ref_objective_value
 
-    def getNumericalDerivatives(self,noise_std=0.001,use_noise=False):
+    def getNumericalDerivatives(self,noise_std=0.001,use_noise=False, return_images=False):
 
         delta_matrix = np.zeros([3,3])
 
         #get the reference pixel size and manipulability (camera 5 indexed at 0)
         if self.interface.type == "VREP":
-            pixel_sizes, blob_centres, manip = self.interface.getObjectiveFunctionValues()
+            __, pixel_sizes, blob_centres, manip = self.interface.getObjectiveFunctionValues()
             pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
 
         elif self.interface.type == "ROS":
@@ -287,7 +284,7 @@ class move_to_see:
 
         x = []
         x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0)
-
+                
         for i in range(0,self.nCameras):
 
             x.append(Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip = 0.0))
@@ -311,7 +308,10 @@ class move_to_see:
 
             delta_matrix[np.unravel_index(i, delta_matrix.shape)] = delta
 
-        return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val, camera_images, objects
+        if return_images:
+            return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val, camera_images, objects
+        else:
+            return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val
 
     def showNImages(self, windowName, images):
 
@@ -391,8 +391,13 @@ class move_to_see:
 
     def compute_roll_pitch(self, blob_centre):
 
-        delta_x = (blob_centre[0] - self.image_cx)/self.image_width
-        delta_y = (blob_centre[1] - self.image_cy)/self.image_height
+        if self.interface.type == "ROS":
+            delta_x = (blob_centre[0] - self.image_cx)/self.image_width
+            delta_y = (blob_centre[1] - self.image_cy)/self.image_height
+
+        if self.interface.type == "VREP":
+            delta_x = (blob_centre[0] - self.image_cx)
+            delta_y = (blob_centre[1] - self.image_cy)
 
         #print ("Blob centre x = ", blob_centre[0])
         #print ("Blob centre y = ", blob_centre[1])
@@ -400,13 +405,12 @@ class move_to_see:
         #print ("delta_x = ", delta_y)
 
 
-
         dRoll = math.radians(self.FOV_x*delta_x)
         dPitch =  math.radians(self.FOV_y*delta_y)
 
-        if abs(dPitch) < 0.02:
+        if abs(dPitch) < 0.002:
             dPitch= 0.0
-        if abs(dRoll) < 0.02:
+        if abs(dRoll) < 0.002:
             dRoll = 0.0
 
         return dRoll,dPitch
@@ -429,8 +433,6 @@ class move_to_see:
             use_noise = False
             rate = rospy.Rate(50) # 100hz
 
-
-
         # pose_down = [-0.075,0.0,0.0,-0.05,0.05,0.0,1.0]
         # self.interface.servoPose(pose_down, "harvey_arm", "pi_camera_link", 0.4)
 
@@ -439,22 +441,28 @@ class move_to_see:
 
 
         if self.interface.type == "VREP":
-            self.start_image = self.interface.getImage()
-
-        delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
+            self.start_image = self.interface.getRefImage()
+            delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise, return_images=False)
+        else:
+            delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
 
         while (self.avg_abs_gradient > self.tolerance) and (self.x_ref.pixel_size < self.max_pixel) and (self.count < self.max_count):
 
             # raw_input("Press Enter to continue...")
 
             t = time.time()
-            delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
+            if self.interface.type == "VREP":
+                delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise, return_images=False)
+            else:
+                delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
+                for i in range(0,self.nCameras):
+                    self.images[i].append(camera_images[i])
+                    self.objects[i].append(objects[i])
+
             dt = time.time() - t
             print ("Time to get Derivatives: ", dt)
 
-            for i in range(0,self.nCameras):
-                self.images[i].append(camera_images[i])
-                self.objects[i].append(objects[i])
+            
 
 
             #print ('Numerical deltas: \n')
@@ -494,7 +502,7 @@ class move_to_see:
                 self.vanilla_gradients.append(self.vanilla_gradient)
 
 
-
+                print ("ref blob centre", self.x_ref.blob_centre)
                 dRoll, dPitch = self.compute_roll_pitch(self.x_ref.blob_centre)
 
                 #print "Roll = ", dRoll
@@ -553,10 +561,13 @@ class move_to_see:
 
                 elif self.interface.type == "VREP":
 
+                    print ("Pose delta = ", pose_delta)
+                    print ("Roll: ", dRoll)
+                    print ("Pitch: ", dPitch)
                     #pose = [0,0,0]
                     if self.set_orientation==True:
-                        pose_delta = np.append(pose_delta,-dPitch/2) #add 0 angle for euler x
-                        pose_delta = np.append(pose_delta,-dRoll/2)
+                        pose_delta = np.append(pose_delta,-dPitch) #add 0 angle for euler x
+                        pose_delta = np.append(pose_delta,-dRoll)
                     else:
                         pose_delta = np.append(pose_delta,0)
                         pose_delta = np.append(pose_delta,0)
@@ -667,7 +678,7 @@ class move_to_see:
             #print "\n"
 
         if self.interface.type == "VREP":
-            self.end_image = self.interface.getImage()
+            self.end_image = self.interface.getRefImage()
 
         print ('cost within tolerance, finished')
 
@@ -679,8 +690,12 @@ class move_to_see:
         print ("\n")
 
         ret_dict = {}
-        ret_dict['images'] = self.images
-        ret_dict['objects'] = self.objects
+        
+        if self.interface.type == "ROS":
+           
+            ret_dict['images'] = self.images
+            ret_dict['objects'] = self.objects
+
         ret_dict['count'] = self.counts
         ret_dict['gradient'] = self.gradients
         ret_dict['ref_pixel_size'] = self.ref_pixel_sizes
@@ -699,6 +714,7 @@ if __name__=="__main__":
     interface = "ROS"
 
     if interface == "ROS":
+        import rospy
         rospy.init_node("harvey_move_to_see")
         print ("Running move to see node")
 

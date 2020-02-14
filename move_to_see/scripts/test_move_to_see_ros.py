@@ -73,4 +73,4 @@ if __name__=="__main__":
     pickle.dump(data,fileObject)
     fileObject.close()
 
-    print "Finished capturing data"
+    print ("Finished capturing data")
