@@ -30,22 +30,22 @@
 
 import time
 import cv2 as cv
-#import array
 import numpy as np
 import matplotlib.pyplot as plt
 import math
 import collections
-#import cProfile
-#from PIL import Image as I
-#from pyquaternion import Quaternion as pyQuat
 from collections import deque
 import scipy
 import scipy.sparse.linalg
 import scipy.linalg
-
-
-
+import robotics.tools as rt
+import robotics.robot as rr
+#import array
+#import cProfile
+#from PIL import Image as I
+#from pyquaternion import Quaternion as pyQuat
 #import pylab as plb
+
 
 class Xtype:
     def __init__(self, **kwds):
@@ -54,9 +54,10 @@ class Xtype:
 
 class move_to_see:
 
-    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8,manip_weight=0.2,end_tolerance=1e-6, max_pixel=15,max_count=50, velocity_scale=0.2):
+    def __init__(self, number_of_cameras, interface,step_size=0.1, size_weight=0.8, manip_weight=0.2, end_tolerance=1e-6, max_pixel=15, max_count=50, velocity_scale=0.2, robot_type=1):
 
         self.nCameras = number_of_cameras
+        self.robotType = robot_type
 
         if interface == "ROS":
             print ('Creating ros interface')
@@ -127,12 +128,10 @@ class move_to_see:
             self.FOV_y = 48.8
 
 
-
-
         startTime=time.time()
 
-        self.ref_index = 4 #index of middle camera
-        self.ref_size = 0 #use this as a stopping condition
+        self.ref_index = 4  # index of middle camera
+        self.ref_size = 0   # use this as a stopping condition
 
         self.max_size = []
         self.max_distance = []
@@ -157,6 +156,8 @@ class move_to_see:
         self.ref_pixel_sizes = []
         self.ref_pixel_sizes_zero_noise = []
         self.ref_manips = []
+        self.ref_manips_cs = []
+        self.ref_obj_vals = []
         self.counts = []
         self.accum_step_size = 0.0
         self.gradients = []
@@ -172,6 +173,7 @@ class move_to_see:
         self.abs_gradient = 50
         self.avg_abs_gradient = 50
 
+
     def reset(self):
 
         self.ee_poses = []
@@ -181,6 +183,8 @@ class move_to_see:
         self.ref_pixel_sizes = []
         self.ref_pixel_sizes_zero_noise = []
         self.ref_manips = []
+        self.ref_manips_cs = []
+        self.ref_obj_vals = []
         self.counts = []
         self.accum_step_size = 0.0
         self.gradients = []
@@ -193,16 +197,18 @@ class move_to_see:
         self.size_weight = size_weight
         self.manip_weight = manip_weight
 
+
     def setCameraPosition(self,radius,link_offset,camera_angle,set_euler_angles):
 
         self.interface.setCameraOffsets(radius,link_offset,camera_angle,set_euler_angles)
 
         self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
 
-        #delete the fourth camera value as this is the reference camera
+        # delete the fourth camera value as this is the reference camera
         self.camera_vectors = (np.delete(self.camera_positions,4,1)).transpose()
         self.camera_vector_mags = np.linalg.norm(self.camera_vectors,None,1)
         self.camera_unit_vectors = self.camera_vectors/self.camera_vector_mags[:,np.newaxis]
+
 
     def initCameraPosition(self):
 
@@ -222,10 +228,9 @@ class move_to_see:
         cv.absdiff(image_1,image_2,diffImage)
 
 
-
     def calcNumericalDerivative(self, x1, x2):
 
-       # ref_size = x1.pixel_size
+        #ref_size = x1.pixel_size
         #ref_blob_centre = x1.blob_centre
         #ref_manip = x1.manip
         dist_weight = self.dist_weight
@@ -234,7 +239,7 @@ class move_to_see:
 
         #ref_size, blob_centre,
 
-        #ensure weights sum to 1
+        # ensure weights sum to 1
         dist_weight = dist_weight/(dist_weight+size_weight+manip_weight)
         size_weight = size_weight/(dist_weight+size_weight+manip_weight)
         manip_weight = manip_weight/(dist_weight+size_weight+manip_weight)
@@ -244,13 +249,11 @@ class move_to_see:
         #image_cx = 0.5
         #image_cy = 0.5
 
-
         #distance1 = 1 - math.sqrt(math.pow(x1.blob_centre[0] - self.image_cx,2) + math.pow(x1.blob_centre[1] - self.image_cy,2))
         #distance2 = 1 - math.sqrt(math.pow(x2.blob_centre[0] - self.image_cx,2) + math.pow(x2.blob_centre[1] - self.image_cy,2))
 
-
         #if ref_distance > 0:
-             # manip_diff = manip-ref_manip
+            #manip_diff = manip-ref_manip
 
         if (x2.pixel_size > 0.0) and (x1.pixel_size > 0.0):
             #distance_diff = (distance1 - distance2) / distance1
@@ -260,21 +263,27 @@ class move_to_see:
             if self.interface.type == "ROS":
                 manip_diff = 0
             else:
-                manip_diff = 0  # use to be (x2.manip - x1.manip) / x1.manip
+                if x1.manip != 0:
+                    manip_diff = (x2.manip - x1.manip) / x1.manip
+                else:
+                    manip_diff = x2.manip
+                    print ('x1.manip is zero')
 
             total_delta = size_weight*norm_pixel_diff + manip_weight*manip_diff
             ref_objective_value = size_weight*x1.pixel_size + manip_weight*x1.manip
         else:
             total_delta = 0.0
             ref_objective_value = 0.0
+            #print('pixel size 0')
 
         return total_delta, ref_objective_value
+
 
     def getNumericalDerivatives(self,noise_std=0.001,use_noise=False, return_images=False):
 
         delta_matrix = np.zeros([3,3])
 
-        #get the reference pixel size and manipulability (camera 5 indexed at 0)
+        # get the reference pixel size and manipulability (camera 5 indexed at 0)
         if self.interface.type == "VREP":
             __, pixel_sizes, blob_centres, manip = self.interface.getObjectiveFunctionValues()
             pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
@@ -283,8 +292,27 @@ class move_to_see:
             pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
 
         x = []
-        x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0)
+        x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0, manip_cs=0.0)
                 
+        # create ur5 model
+        if self.robotType==1:
+            #t = time.time()
+            ur5 = rr.UR5()
+            #dt = time.time() - t
+            #print ("Time to create ur5 model: ", dt)
+
+        # create panda model
+        if self.robotType==2:
+            panda = rr.Panda()
+
+        # get joint parameters
+        #t2 = time.time()
+        jointVals = self.interface.getJointParameters()   
+        #dt = time.time() - t2
+        #print ("Time to get ur5 joint values", dt)
+        
+        t = time.time()
+        
         for i in range(0,self.nCameras):
 
             x.append(Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip = 0.0))
@@ -293,25 +321,62 @@ class move_to_see:
                 x_ref.blob_centre = blob_centres[4]
                 x[i].blob_centre = blob_centres[i]
 
-
-                x_ref.manip = 0.0
-                x[i].manip = 0.0
+                #x_ref.manip = manip[4]
+                #x[i].manip = manip[i]
+                x_ref.manip_cs = manip[4]
 
                 x_ref.pixel_size = pixel_sizes[4]
                 x[i].pixel_size = pixel_sizes[i]
             else:
                 print ("target not found in all images")
 
+            # calculate manipulability index using Jesse's code
+            if self.robotType==1:   # UR5
+                #print(i)
+                #print(np.array(jointVals[4*7:4*7+7]))
+                #print(np.array(jointVals[i*7:i*7+7]))
+
+                # calc manipulability for ref cam
+                ur5.q = np.array(jointVals[4*7:4*7+7])
+                J = ur5.J0
+                #print(J, '\n')
+                x_ref.manip = np.sqrt(np.linalg.det(J @ np.transpose(J)))
+
+                # calc manipulability for other cam
+                ur5.q = np.array(jointVals[i*7:i*7+7])
+                J = ur5.J0 
+                x[i].manip = np.sqrt(np.linalg.det(J @ np.transpose(J)))
+                #print(ur5.T)
+
+            if self.robotType==2: # Panda
+                # calc manipulability for ref cam
+                panda.q = np.array(jointVals[4*7:4*7+7])
+                J = panda.J0 
+                if np.linalg.det(J @ np.transpose(J)) < 0:
+                    print(np.linalg.det(J @ np.transpose(J)))
+                    print(J)
+                x_ref.manip = np.sqrt(np.linalg.det(J @ np.transpose(J)))
+                
+                # calc manipulability for other cam
+                panda.q = np.array(jointVals[i*7:i*7+7])
+                J = panda.J0
+                if np.linalg.det(J @ np.transpose(J)) < 0:
+                    print(np.linalg.det(J @ np.transpose(J)))
+                    print(J)
+                x[i].manip = np.sqrt(np.linalg.det(J @ np.transpose(J)))
 
             delta,x_ref_obj_val = self.calcNumericalDerivative(x_ref, x[i])
 
-
             delta_matrix[np.unravel_index(i, delta_matrix.shape)] = delta
-
+        
+        dt = time.time() - t
+        print ("Time to calculate manipulability for each camera: ", dt)
+        
         if return_images:
             return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val, camera_images, objects
         else:
             return delta_matrix, x_ref, x, pixel_sizes[4], x_ref_obj_val
+
 
     def showNImages(self, windowName, images):
 
@@ -322,6 +387,7 @@ class move_to_see:
 
         cv.imshow(windowName, full_stack)
         cv.waitKey(1)
+
 
     def computeDirDerivative(self, direction_vectors,numerical_derivatives):
 
@@ -336,13 +402,13 @@ class move_to_see:
 
         residuals = derivative.dot(direction_vectors.transpose()) - x
 
-
         #print ("residuals: \n")
         #print (np.insert(residuals,4,0.0).reshape((3,3)))
         #print "\n"
         # print ("derivative: ", derivative.shape)
 
         return derivative
+
 
     def weightedAverageVector(self, delta_matrix, camera_positions):
 
@@ -354,7 +420,8 @@ class move_to_see:
 
         return vdes
 
-    #Compute the weighted average of quaternions
+
+    # Compute the weighted average of quaternions
     def weighted_avg_quaternions(self, q_array,w):
 
         i = 0
@@ -373,9 +440,9 @@ class move_to_see:
             # print "  "
             # print "  "
 
-        #compute the eigen values/vectors
+        # compute the eigen values/vectors
         #evals, evecs = np.linalg.eig(Q)
-        #find max eigen vector which represents the weighted average of quaternions
+        # find max eigen vector which represents the weighted average of quaternions
         #sorted_evals_evecs = sorted(zip(evals,evecs.T),key=lambda x: x[0].real, reverse=True)
         if(w_sum > 0.0):
             Q = (1.0/w_sum)*Q
@@ -385,9 +452,11 @@ class move_to_see:
         #print "Sorted: ", sorted_evals_evecs
         return evecs[0]
 
+
     def running_mean(self, x, N):
         cumsum = np.cumsum(np.insert(x, 0, 0))
         return (cumsum[N:] - cumsum[:-N]) / N
+
 
     def compute_roll_pitch(self, blob_centre):
 
@@ -404,7 +473,6 @@ class move_to_see:
         #print ("delta_x = ", delta_x)
         #print ("delta_x = ", delta_y)
 
-
         dRoll = math.radians(self.FOV_x*delta_x)
         dPitch =  math.radians(self.FOV_y*delta_y)
 
@@ -414,6 +482,7 @@ class move_to_see:
             dRoll = 0.0
 
         return dRoll,dPitch
+
 
     def execute(self, move_robot, CNN_model=None, device=None):
 
@@ -427,7 +496,7 @@ class move_to_see:
         print ('Executing servo loop')
         print ("\n")
 
-        use_noise=False
+        use_noise = False
 
         if self.interface.type == "ROS":
             use_noise = False
@@ -438,7 +507,6 @@ class move_to_see:
 
         print ('Diff of avg delta and current delta ', self.avg_abs_gradient)
         print ('should be smaller then tolerance: ', self.tolerance)
-
 
         if self.interface.type == "VREP":
             self.start_image = self.interface.getRefImage()
@@ -462,12 +530,9 @@ class move_to_see:
             dt = time.time() - t
             print ("Time to get Derivatives: ", dt)
 
-            
-
-
             #print ('Numerical deltas: \n')
             #print (delta_matrix)
-            #print "\n"
+            #print ("\n")
 
             # self.interface.getJacobian()
             # velocity = np.array([0.0,0,0,0,0,0,-0.6])
@@ -479,8 +544,6 @@ class move_to_see:
                 print ("delta matrix = 0, stopping")
                 break
             else:
-
-
                 if CNN_model is not None:
                     ref_image = camera_images[4]
                     ref_image_t = trans_image(ref_image).unsqueeze(0).to(device)    # transform image, then add dim and load to gpu
@@ -500,7 +563,6 @@ class move_to_see:
 
                 self.gradients.append(self.gradient)
                 self.vanilla_gradients.append(self.vanilla_gradient)
-
 
                 print ("ref blob centre", self.x_ref.blob_centre)
                 dRoll, dPitch = self.compute_roll_pitch(self.x_ref.blob_centre)
@@ -539,7 +601,6 @@ class move_to_see:
                     pose_delta = np.append(pose_delta,q[2]) #add quaternion z
                     pose_delta = np.append(pose_delta,q[3]) #add quaternion w
                     pose_delta = pose_delta.reshape((7,))
-
 
                     print ("Pose delta = ", pose_delta)
                     print ("Roll: ", dRoll)
@@ -582,12 +643,14 @@ class move_to_see:
                     ee_pose = self.interface.getCurrentPose()
                     self.ee_poses.append(ee_pose)
 
-                ######################################3
+                ######################################
 
                 self.pose_deltas.append(pose_delta)
 
                 self.ref_pixel_sizes.append(self.x_ref.pixel_size)
                 self.ref_manips.append(self.x_ref.manip)
+                self.ref_manips_cs.append(self.x_ref.manip_cs)
+                self.ref_obj_vals.append(self.x_ref_obj_val)
 
                 self.count = self.count + 1
                 self.counts.append(self.count)
@@ -600,19 +663,31 @@ class move_to_see:
                     plt.figure(1)
                     self.fig.clf()
 
-                    plt.subplot(211)
+                    plt.subplot(411)
                     plt.plot(self.counts,self.ref_pixel_sizes,'r')
+                    plt.xlabel('image #')
+                    plt.ylabel('ref pixel size')
 
-
-                    plt.subplot(212)
+                    plt.subplot(412)
                     plt.plot(self.counts,self.ref_manips,'b')
+                    plt.xlabel('image #')
+                    plt.ylabel('ref manip index jesse')
+
+                    plt.subplot(413)
+                    plt.plot(self.counts,self.ref_manips_cs,'y')
+                    plt.xlabel('image #')
+                    plt.ylabel('ref manip index cs')
+
+                    plt.subplot(414)
+                    plt.plot(self.counts,self.ref_obj_vals,'g')
+                    plt.xlabel('image #')
+                    plt.ylabel('ref objective')
 
                     self.fig.canvas.draw()
                     self.fig.canvas.flush_events()
                     #plt.draw()
 
                 if self.interface.type == "ROS":
-
                     print (self.gradient.shape)
 
                     self.grad_x.append(self.gradient[0,0])
@@ -622,7 +697,6 @@ class move_to_see:
                     self.van_grad_x.append(self.vanilla_gradient[0,0])
                     self.van_grad_y.append(self.vanilla_gradient[0,1])
                     self.van_grad_z.append(self.vanilla_gradient[0,2])
-
 
                     plt.figure(1)
                     self.fig.clf()
@@ -649,7 +723,7 @@ class move_to_see:
                     self.fig.canvas.flush_events()
 
 
-                #end control loop by maintaining desired rate
+                # end control loop by maintaining desired rate
                 # if self.interface.type == "ROS":
     	    	#     for i in range(0,self.nCameras):
                 #         print "Getting image from camera_",str(i)
@@ -663,7 +737,6 @@ class move_to_see:
                 #print ('directional derivative: \n')
                 #print (self.gradient)
                 #print "\n"
-
 
             print ('Avg Abs Gradient: ', self.avg_abs_gradient)
             print ('Gradient: ', self.gradient)
@@ -681,7 +754,12 @@ class move_to_see:
             self.end_image = self.interface.getRefImage()
 
         print ('cost within tolerance, finished')
-
+        #if self.avg_abs_gradient <= self.tolerance:
+        #    print('gradient<tolerance')
+        #if self.x_ref.pixel_size >= self.max_pixel:
+        #    print('pixel>max')
+        #if self.count >= self.max_count:
+        #    print('max count reached')
 
         print ('Avg Abs Gradient: ', self.avg_abs_gradient)
         print ('stopped if smaller then tolerance: ', self.tolerance)
@@ -707,6 +785,7 @@ class move_to_see:
             ret_dict['start_end_images'] = [self.start_image, self.end_image]
 
         return ret_dict
+
 
 if __name__=="__main__":
 

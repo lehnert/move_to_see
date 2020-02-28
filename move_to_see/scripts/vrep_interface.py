@@ -26,13 +26,10 @@
 # should be a corresponding call to simxFinish at the end!
 
 
-
-
-
 import time
+import numpy as np
 #import cv2 as cv
 #import array
-import numpy as np
 #import matplotlib.pyplot as plt
 #from mpl_toolkits.mplot3d import Axes3D
 #import math
@@ -45,8 +42,9 @@ import numpy as np
 #import scipy.linalg
 #import pylab as plb
 
+
 try:
-     import vrep
+    import vrep
 except:
     print ('"vrep.py" could not be imported. This means very probably that')
     print ('either "vrep.py" or the remoteApi library could not be found.')
@@ -55,14 +53,14 @@ except:
     print ('--------------------------------------------------------------')
     print ('')
 
+
 class vrep_interface:
 
-        
     def __init__(self, number_of_cameras, ip='127.0.0.1', port=19997):
         
         self.type = "VREP"
 
-        #setup VREP connection
+        # setup VREP connection
         print ('connecting to vrep')
         vrep.simxFinish(-1) # just in case, close all opened connections
         self.clientID=vrep.simxStart(ip,port,True,True,5000,1) # Connect to V-REP
@@ -76,7 +74,6 @@ class vrep_interface:
             res,camera_handle = vrep.simxGetObjectHandle(self.clientID,'Vision_sensor_ref'+str(index),vrep.simx_opmode_oneshot_wait)
             self.camera_handles.append(camera_handle)
         
-
         #self.clientID=vrep.simxStart('192.168.1.39',19997,True,True,5000,5) # Connect to V-REP
 
         # ensure simulation has been restarted
@@ -90,7 +87,7 @@ class vrep_interface:
 
         self.nCameras = number_of_cameras
 
-        #internal memory for pixel info
+        # internal memory for pixel info
         self.pixel_sizes = self.init_list_of_objects(number_of_cameras, 0)
         self.pixel_sizes_filtered = self.init_list_of_objects(number_of_cameras, 0)
         self.blob_centres = self.init_list_of_objects(number_of_cameras, 0)
@@ -98,7 +95,7 @@ class vrep_interface:
     def __del__(self):
         vrep.simxFinish(self.clientID)
         
-    #OLD but left here for use in previous versions 
+    # OLD but left here for use in previous versions 
     def getImage(self):
         res,resolution,image = vrep.simxGetVisionSensorImage(self.clientID,self.ref_camera_color_handle,0,vrep.simx_opmode_oneshot_wait)
         
@@ -125,10 +122,20 @@ class vrep_interface:
         return ret[...,::-1]
 
     def init_joints(self):
-        return self.set_joints_degrees(np.array([0.0,-360,-270-45,-90,-135,-90,90]))
+        # UR5
+        #return self.set_joints_degrees(np.array([0.0,-360,-270-45,-90,-135,-90,90])) # normal
+        #return self.set_joints_degrees(np.array([0,-130,-45,90,0,190,0])) # 3 7 5 idx out of range mts l301
+        #return self.set_joints_degrees(np.array([0,-30,30,-30,0,120,0])) # 3 9 5 nonetype jointvals mts l324 / idx out of range mts l301
+        #return self.set_joints_degrees(np.array([0,90,-30,55,0,0,0])) # 3 9 5 servo fail MvFuncs l594 / idx out of range mts l301
+        #return self.set_joints_degrees(np.array([0,0,0,0,0,90,0])) # 3 9 6
+        #return self.set_joints_degrees(np.array([0,90,0,0,0,0,0])) # 3 10 6
+        #return self.set_joints_degrees(np.array([0.0,-20,-270-45,-70,-135,-90,90])) # 4 6 7
+
+        # Panda
+        #return self.set_joints_degrees(np.array([0,0,0,-90,-90,90,0])) # normal
+        return self.set_joints_degrees(np.array([0,0,0,-45,-90,90,0])) # normal
 
     def initialise_sim(self,ee_pose,frame=[]):
-        
         inFloats = ee_pose
         inStrings = [frame]
         emptyBuff = bytearray()        
@@ -190,7 +197,6 @@ class vrep_interface:
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'MoveFunctions',vrep.sim_scripttype_childscript,'setCameraOffsets',[],inFloats,[],emptyBuff,vrep.simx_opmode_oneshot_wait)
 
     def getDepthPoint(self):
-        
         emptyBuff = bytearray()
 
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'MoveFunctions',vrep.sim_scripttype_childscript,'getReferenceDepthPoint',[],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
@@ -211,14 +217,12 @@ class vrep_interface:
         res, orientation = vrep.simxGetObjectOrientation(self.clientID,self.ee_handle,self.base_frame_handle,vrep.simx_opmode_oneshot_wait)
         #res, transform = vrep.simxGetObjectMatrix(self.clientID,self.ee_handle,self.base_frame_handle,vrep.simx_opmode_oneshot_wait)
         return position+orientation
-
-        
+    
     def getCameraPositions(self):
         inInts=[]
         inFloats=[]
         emptyBuff = bytearray()
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'MoveFunctions',vrep.sim_scripttype_childscript,'getCameraOffsets',[],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
-
         
         camera_positions = np.zeros([3,self.nCameras])
         camera_poses = np.zeros([5,self.nCameras])
@@ -246,7 +250,6 @@ class vrep_interface:
                 # camera_poses[5,i] = retFloats[(i*7)+5]
                 # camera_poses[6,i] = retFloats[(i*7)+6]
     
-    
                 # camera_orientations[0,i] = retFloats[(i*7)]
                 # camera_orientations[1,i] = retFloats[(i*7)+1]
                 # camera_orientations[2,i] = retFloats[(i*7)+2]
@@ -262,21 +265,20 @@ class vrep_interface:
         return camera_positions,np.array(camera_orientations), camera_poses
 
     def servoTargetCamera(self, target_camera, step_size):
-
-        inInts=target_camera
-        inFloats=[step_size]
+        inInts = target_camera
+        inFloats = [step_size]
         emptyBuff = bytearray()
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'MoveFunctions',vrep.sim_scripttype_childscript,'movetoCamera',inInts,inFloats,[],emptyBuff,vrep.simx_opmode_oneshot_wait)
         # print "retInts: ", retInts
         if(retInts[0] == 1):
-            print ('servoing failed')
+            print ('servoTargetCamera: servoing failed')
             return False
         else:
             return True
 
     def getObjectiveFunctionValues(self):
-        inInts=[]
-        inFloats=[]
+        inInts = []
+        inFloats = []
         emptyBuff = bytearray()
         t1 = time.time()
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,
@@ -287,7 +289,7 @@ class vrep_interface:
                                                                                vrep.simx_opmode_oneshot_wait)
 
         t2 = time.time()
-        #print("Time to get objective function values = ", t2-t1)
+        print("Time to get objective function values = ", t2-t1)
         
         delta_matrix = np.zeros([3,3])
         size_matrix = np.zeros([3,3])
@@ -299,17 +301,16 @@ class vrep_interface:
         blob_centre = []
         manip = []
         if res == 0:
-
             for i in range(0,self.nCameras):
                 pixel_size.append(retFloats[(i*4)])
                 blob_centre.append([retFloats[(i*4)+1], retFloats[(i*4)+2]])
                 manip.append(retFloats[(i*4)+3])
-            
             return True, pixel_size, blob_centre, manip
         else:
             print("Error calling get cost sim function, ret code: ", res )
-            return False, 0,0,0
-
+            return False, pixel_size, blob_centre, manip#0,0,0 # This caused errors, check if it's ok now..
+        
+        
         #get the reference pixel size and manipulability (camera 5 indexed at 0)
         #ref_size = pixel_size[4]
         #ref_manip = manip[4]
@@ -317,7 +318,6 @@ class vrep_interface:
 
         #return pixel values and blob centres (last retval is for noisy data)       
         
-       
 
         ####################
         # previous vrep code
@@ -345,7 +345,7 @@ class vrep_interface:
         emptyBuff = bytearray()
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'MoveFunctions',vrep.sim_scripttype_childscript,'moveXYZdelta',inInts,inFloats,[],emptyBuff,vrep.simx_opmode_oneshot_wait)
         if(retInts[0] == 1):
-            print ('servoing failed')
+            print ('servoXYZ: servoing failed')
             return False
         else:
             return True
@@ -357,7 +357,7 @@ class vrep_interface:
         emptyBuff = bytearray()
         res,retInts,retFloats,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'MoveFunctions',vrep.sim_scripttype_childscript,'moveXYZ',inInts,inFloats,[],emptyBuff,vrep.simx_opmode_oneshot_wait)
         if(retInts[0] == 1):
-            print ('servoing failed')
+            print ('setXYZ: servoing failed')
             return False
         else:
             return True
@@ -372,7 +372,7 @@ class vrep_interface:
         if(retInts[0] == 0):
             return True
         else:
-            print ('servoing failed')
+            print ('setPose: servoing failed')
             return False
 
     def servoPose(self, pose):
@@ -386,10 +386,9 @@ class vrep_interface:
         if(retInts[0] == 0):
             return True
         else:
-            print ('servoing failed')
+            print ('servoPose: servoing failed')
             return False
         # res,retInts,robotInitialState,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getRobotState',[robot_handle],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
-
 
         # res,retInts,target1Pose,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getObjectPose',[target1],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
 
@@ -411,11 +410,13 @@ class vrep_interface:
         else:
             if(retInts[0] == 0):
                 return True
-            else:
-                print ('servoing failed')
+            elif (retInts[0] == 1):
+                print ('servoPoseEuler: servoing failed')
+                return False
+            elif (retInts[0] == 2):
+                print ('servoPoseEuler: servoing not performed')
                 return False
         # res,retInts,robotInitialState,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getRobotState',[robot_handle],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
-
 
         # res,retInts,target1Pose,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getObjectPose',[target1],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
 
@@ -429,9 +430,23 @@ class vrep_interface:
         if(retInts[0] == 0):
             return True
         else:
-            print ('servoing failed')
+            print ('setPoseEuler: servoing failed')
             return False
         # res,retInts,robotInitialState,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getRobotState',[robot_handle],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
 
-
         # res,retInts,target1Pose,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getObjectPose',[target1],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
+
+    # get current joint values
+    def getJointParameters(self):
+        emptyBuffer = bytearray()
+        res,retInts,retFloats,retStrings,retBuffer = vrep.simxCallScriptFunction( self.clientID,
+                                                                                  'MoveFunctions',
+                                                                                  vrep.sim_scripttype_childscript,
+                                                                                  'getJointValues',
+                                                                                  [],[],[],emptyBuffer,
+                                                                                  vrep.simx_opmode_oneshot_wait)
+        if res == vrep.simx_return_ok:
+            #print (retFloats)
+            return retFloats
+        else:
+            print ('could not get joint values')
