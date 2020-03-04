@@ -58,6 +58,13 @@ import pygame
 
 from pyrep.errors import ConfigurationError, ConfigurationPathError, IKError
 
+from pyrep.robots.arms.arm import Arm
+
+
+class Harvey(Arm):
+
+    def __init__(self, count: int = 0):
+        super().__init__(count, 'Harvey', 7)
 
 
 class pyrep_interface():
