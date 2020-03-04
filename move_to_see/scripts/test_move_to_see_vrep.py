@@ -40,13 +40,20 @@ from move_to_see import move_to_see
 
 if __name__=="__main__":
 
-    # capsicum position with respect to V-REP world frame
-    cx = 0.3 # p:0.3 ur:0.4                
-    cy = 0.5 # p:0.6 ur:0.6
-    cz = 1.2 # p:1.0 ur:0.7
-
     # robot type, 1 = ur5, 2 = panda
-    rt = 2
+    rt = 1
+
+    if rt == 1:
+        # capsicum position with respect to V-REP world frame
+        cx = 0.3 # ur:0.4                
+        cy = 0.7 # ur:0.6
+        cz = 0.5 # ur:0.7
+
+    if rt == 2:
+        # capsicum position with respect to V-REP world frame
+        cx = 0.3 # p:0.3              
+        cy = 0.5 # p:0.6
+        cz = 1.2 # p:1.0
 
     # 3DMTS camera array parameters
     radius = 0.07               # size of 3DMTS camera array
@@ -73,9 +80,9 @@ if __name__=="__main__":
     leaf_pos_offset  = [cx - 0.1, cy + 0.1, cz]
     occlusion_angle  = math.pi/4
     
-
+    # initialise Move To See
     mts = move_to_see(9,"VREP", step_size=0.001,          # MTS run conditions
-                    size_weight=0.5, manip_weight=0.5,    # MTS objective funtion weights
+                    size_weight=1.0, manip_weight=0.0,    # MTS objective funtion weights
                     end_tolerance=1.5,max_pixel=0.4,      # MTS termination conditions mts.initCameraPosition()
                     robot_type=rt)                        # ur5 = 1, panda = 2
     
@@ -83,19 +90,21 @@ if __name__=="__main__":
     time.sleep(3)                   # allow time for V-REP to initiate sim
 
     # initialise position of objects in scene
-    #if rt == 1:
-    #    mts.interface.init_joints()
     mts.interface.init_joints()
-
     mts.interface.set_object_position('capsicum',fruit_pos_offset,[],'base_frame')
     #mts.interface.set_object_position('leaf_0',leaf_pos_offset,[occlusion_angle,0.0,0.0],'base_frame')
     mts.setCameraPosition(radius,link_offset,camera_angle,set_euler_angles)
+
+    # get transformation matrix cam i
+    #for i in range (0,9):
+    #    mts.interface.getCamMatrix(i)
 
     # print "Setting arm to initial position"
     # if not mts.interface.movetoNamedPose("harvey_arm","move_to_see_start_v4", 0.4):
     #     print "failed to reset robot arm"
     #     exit()
 
+    # execute mts
     data = mts.execute(move_robot=True)
 
     # print "Setting arm to initial position"

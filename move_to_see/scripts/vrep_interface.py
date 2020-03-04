@@ -124,7 +124,7 @@ class vrep_interface:
     def init_joints(self):
         # UR5
         #return self.set_joints_degrees(np.array([0.0,-360,-270-45,-90,-135,-90,90])) # normal
-        #return self.set_joints_degrees(np.array([0,-130,-45,90,0,190,0])) # 3 7 5 idx out of range mts l301
+        return self.set_joints_degrees(np.array([0,-130,-45,90,0,190,0])) # 3 7 5 idx out of range mts l301
         #return self.set_joints_degrees(np.array([0,-30,30,-30,0,120,0])) # 3 9 5 nonetype jointvals mts l324 / idx out of range mts l301
         #return self.set_joints_degrees(np.array([0,90,-30,55,0,0,0])) # 3 9 5 servo fail MvFuncs l594 / idx out of range mts l301
         #return self.set_joints_degrees(np.array([0,0,0,0,0,90,0])) # 3 9 6
@@ -133,7 +133,7 @@ class vrep_interface:
 
         # Panda
         #return self.set_joints_degrees(np.array([0,0,0,-90,-90,90,0])) # normal
-        return self.set_joints_degrees(np.array([0,0,0,-45,-90,90,0])) # normal
+        #return self.set_joints_degrees(np.array([0,0,0,-45,-90,90,0])) # normal
 
     def initialise_sim(self,ee_pose,frame=[]):
         inFloats = ee_pose
@@ -436,17 +436,49 @@ class vrep_interface:
 
         # res,retInts,target1Pose,retStrings,retBuffer=vrep.simxCallScriptFunction(self.clientID,'remoteApiCommandServer',vrep.sim_scripttype_childscript,'getObjectPose',[target1],[],[],emptyBuff,vrep.simx_opmode_oneshot_wait)
 
-    # get current joint values
-    def getJointParameters(self):
+    # get IK joint values for all of the cameras
+    def getCamsJointValuesIK(self):
         emptyBuffer = bytearray()
         res,retInts,retFloats,retStrings,retBuffer = vrep.simxCallScriptFunction( self.clientID,
                                                                                   'MoveFunctions',
                                                                                   vrep.sim_scripttype_childscript,
-                                                                                  'getJointValues',
+                                                                                  'getCamsJointValuesIK',
                                                                                   [],[],[],emptyBuffer,
                                                                                   vrep.simx_opmode_oneshot_wait)
         if res == vrep.simx_return_ok:
             #print (retFloats)
             return retFloats
         else:
-            print ('could not get joint values')
+            print("Error calling get joint values func, ret code: ", res )
+
+    # get current joint values of the robot
+    def getRobotJoints(self):
+        emptyBuffer = bytearray()
+        res,retInts,retFloats,retStrings,retBuffer = vrep.simxCallScriptFunction( self.clientID,
+                                                                                  'MoveFunctions',
+                                                                                  vrep.sim_scripttype_childscript,
+                                                                                  'getRobotJoints',
+                                                                                  [],[],[],emptyBuffer,
+                                                                                  vrep.simx_opmode_oneshot_wait)
+        if res == vrep.simx_return_ok:
+            print("Current q = ", retFloats)
+            return retFloats
+        else:
+            print("Error calling get joint values func, ret code: ", res )
+
+    # get transformation of cam i wrt ref cam
+    def getCamMatrix(self, cam_idx):
+        inInts = [cam_idx, cam_idx] # ignore 2nd, otherwise it has no length..
+        emptyBuffer = bytearray()
+        res,retInts,retFloats,retStrings,retBuffer = vrep.simxCallScriptFunction( self.clientID,
+                                                                                  'MoveFunctions',
+                                                                                  vrep.sim_scripttype_childscript,
+                                                                                  'getCamMatrix',
+                                                                                  inInts,[],[],emptyBuffer,
+                                                                                  vrep.simx_opmode_oneshot_wait)
+        if res == vrep.simx_return_ok:
+            print("Cam idx: ", cam_idx, "  Transformation matrix: ", retFloats)
+            #return retFloats
+        else:
+            print("Error calling get transformation matrix, ret code: ", res )
+    

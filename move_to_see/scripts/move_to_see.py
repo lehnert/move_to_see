@@ -40,6 +40,7 @@ import scipy.sparse.linalg
 import scipy.linalg
 import robotics.tools as rt
 import robotics.robot as rr
+import matlab.engine
 #import array
 #import cProfile
 #from PIL import Image as I
@@ -71,6 +72,11 @@ class move_to_see:
             print ('Creating vrep interface')
             import vrep_interface as vi
             self.interface = vi.vrep_interface(number_of_cameras)
+            self.interface.start_sim()
+        elif interface == 'PYREP':
+            print ('Creating pyrep interface')
+            import pyrep_interface as pyi
+            self.interface = pyi.pyrep_interface(number_of_cameras,robot_type)
             self.interface.start_sim()
 
         #vrep.simxFinish(-1) # just in case, close all opened connections
@@ -156,6 +162,8 @@ class move_to_see:
         self.ref_pixel_sizes = []
         self.ref_pixel_sizes_zero_noise = []
         self.ref_manips = []
+        self.ref_manips_pc = []
+        self.ref_manips_jh = []
         self.ref_manips_cs = []
         self.ref_obj_vals = []
         self.counts = []
@@ -183,6 +191,8 @@ class move_to_see:
         self.ref_pixel_sizes = []
         self.ref_pixel_sizes_zero_noise = []
         self.ref_manips = []
+        self.ref_manips_pc = []
+        self.ref_manips_jh = []
         self.ref_manips_cs = []
         self.ref_obj_vals = []
         self.counts = []
@@ -292,7 +302,7 @@ class move_to_see:
             pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
 
         x = []
-        x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0, manip_cs=0.0)
+        x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0, manip_pc=0.0, manip_jh=0.0, manip_cs=0.0)
                 
         # create ur5 model
         if self.robotType==1:
@@ -305,12 +315,29 @@ class move_to_see:
         if self.robotType==2:
             panda = rr.Panda()
 
-        # get joint parameters
+        # get joint values of all cameras
         #t2 = time.time()
-        jointVals = self.interface.getJointParameters()   
+        jointVals = self.interface.getCamsJointValuesIK()
         #dt = time.time() - t2
         #print ("Time to get ur5 joint values", dt)
+
+        # get current robot joint values
+        t3 = time.time()
+        robotJointPositions = self.interface.getRobotJoints()
+        dt = time.time() - t3
+        print ("Time to get current q", dt)
         
+        # get manipulability estimate for each camera #TODO:if VREP/PYREP!
+        t4 = time.time()
+        eng = matlab.engine.start_matlab()
+        manip_pc = eng.calc_manipulability(robotJointPositions, self.robotType)#, nargout=9)
+        print(manip_pc)
+        dt = time.time() - t4
+        print ("Time to calc manip matlab", dt)
+        
+        # check whether relative cam matrix stays the same
+        #self.interface.getCamMatrix(0)
+
         t = time.time()
         
         for i in range(0,self.nCameras):
@@ -324,6 +351,7 @@ class move_to_see:
                 #x_ref.manip = manip[4]
                 #x[i].manip = manip[i]
                 x_ref.manip_cs = manip[4]
+                x_ref.manip_pc = manip_pc[4]
 
                 x_ref.pixel_size = pixel_sizes[4]
                 x[i].pixel_size = pixel_sizes[i]
@@ -332,15 +360,12 @@ class move_to_see:
 
             # calculate manipulability index using Jesse's code
             if self.robotType==1:   # UR5
-                #print(i)
-                #print(np.array(jointVals[4*7:4*7+7]))
-                #print(np.array(jointVals[i*7:i*7+7]))
-
                 # calc manipulability for ref cam
                 ur5.q = np.array(jointVals[4*7:4*7+7])
                 J = ur5.J0
                 #print(J, '\n')
                 x_ref.manip = np.sqrt(np.linalg.det(J @ np.transpose(J)))
+                x_ref.manip_jh = np.sqrt(np.linalg.det(J @ np.transpose(J)))
 
                 # calc manipulability for other cam
                 ur5.q = np.array(jointVals[i*7:i*7+7])
@@ -356,6 +381,7 @@ class move_to_see:
                     print(np.linalg.det(J @ np.transpose(J)))
                     print(J)
                 x_ref.manip = np.sqrt(np.linalg.det(J @ np.transpose(J)))
+                x_ref.manip_jh = np.sqrt(np.linalg.det(J @ np.transpose(J)))
                 
                 # calc manipulability for other cam
                 panda.q = np.array(jointVals[i*7:i*7+7])
@@ -648,7 +674,8 @@ class move_to_see:
                 self.pose_deltas.append(pose_delta)
 
                 self.ref_pixel_sizes.append(self.x_ref.pixel_size)
-                self.ref_manips.append(self.x_ref.manip)
+                self.ref_manips_pc.append(self.x_ref.manip_pc)
+                self.ref_manips_jh.append(self.x_ref.manip_jh)
                 self.ref_manips_cs.append(self.x_ref.manip_cs)
                 self.ref_obj_vals.append(self.x_ref_obj_val)
 
@@ -663,22 +690,27 @@ class move_to_see:
                     plt.figure(1)
                     self.fig.clf()
 
-                    plt.subplot(411)
+                    plt.subplot(511)
                     plt.plot(self.counts,self.ref_pixel_sizes,'r')
                     plt.xlabel('image #')
                     plt.ylabel('ref pixel size')
 
-                    plt.subplot(412)
-                    plt.plot(self.counts,self.ref_manips,'b')
+                    plt.subplot(512)
+                    plt.plot(self.counts,self.ref_manips_pc,'b')
+                    plt.xlabel('image #')
+                    plt.ylabel('ref manip index peter')
+
+                    plt.subplot(513)
+                    plt.plot(self.counts,self.ref_manips_jh,'b')
                     plt.xlabel('image #')
                     plt.ylabel('ref manip index jesse')
 
-                    plt.subplot(413)
+                    plt.subplot(514)
                     plt.plot(self.counts,self.ref_manips_cs,'y')
                     plt.xlabel('image #')
                     plt.ylabel('ref manip index cs')
 
-                    plt.subplot(414)
+                    plt.subplot(515)
                     plt.plot(self.counts,self.ref_obj_vals,'g')
                     plt.xlabel('image #')
                     plt.ylabel('ref objective')
