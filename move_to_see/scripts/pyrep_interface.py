@@ -344,13 +344,12 @@ class pyrep_interface():
         row_3 = np.hstack((self.image_array[8], self.image_array[7], self.image_array[6]))
         image_matrix = np.vstack((row_1, row_2, row_3))
 
-
-        self.displayImage(image_matrix)
         # seg_row_1 = np.hstack((segmentedImage_array[2], segmentedImage_array[1], segmentedImage_array[0]))
         # seg_row_2 = np.hstack((segmentedImage_array[5], segmentedImage_array[4], segmentedImage_array[3]))
         # seg_row_3 = np.hstack((segmentedImage_array[8], segmentedImage_array[7], segmentedImage_array[6]))
         # seg_image_matrix = np.vstack((seg_row_1, seg_row_2, seg_row_3))
 
+        self.displayImage(image_matrix)
         # cv2.imshow("Images", image_matrix)
         # cv2.imshow("Segmented Images", seg_image_matrix)
 
