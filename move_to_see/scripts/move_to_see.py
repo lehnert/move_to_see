@@ -67,10 +67,6 @@ class move_to_see:
             from torchvision import transforms
             self.interface = ri.ros_interface(number_of_cameras)
         elif interface == "SIM":
-            # print ('Creating vrep interface')
-            # import vrep_interface as vi
-            # self.interface = vi.vrep_interface(number_of_cameras)
-            # self.interface.start_sim()
             from pyrep_interface import pyrep_interface
             self.interface = pyrep_interface(number_of_cameras, '../../vrep_scenes/PyRep_harvey.ttt')
 
@@ -101,10 +97,10 @@ class move_to_see:
         self.manip_weight = manip_weight
 
         if self.interface.type == "SIM":
-            self.image_width = 256
-            self.image_height = 256
-            self.image_cx = 0.5
-            self.image_cy = 0.5
+            self.image_width = self.interface.image_width
+            self.image_height = self.interface.image_width
+            self.image_cx = round(self.image_width/2)
+            self.image_cy = round(self.image_height/2)
             self.FOV_x = 60
             self.FOV_y = 60
 
@@ -180,9 +176,9 @@ class move_to_see:
         self.size_weight = size_weight
         self.manip_weight = manip_weight
 
-    def setCameraPosition(self,radius,link_offset,camera_angle,set_euler_angles=False):
+    def setCameraPosition(self,xy_offset,z_offset,link_offset,set_euler_angles=False):
 
-        self.interface.setCameraOffsets(radius,link_offset,camera_angle,set_euler_angles)
+        self.interface.setCameraOffsets(xy_offset,z_offset,link_offset,set_euler_angles)
         self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
         self.updateCameraPosition()
 
@@ -241,8 +237,8 @@ class move_to_see:
 
         #get the reference pixel size and manipulability (camera 5 indexed at 0)
         if self.interface.type == "SIM":
-            __, pixel_sizes, blob_centres, manip = self.interface.getObjectiveFunctionValues()
-            pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
+            pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
+            # pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
 
         elif self.interface.type == "ROS":
             pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
@@ -355,13 +351,10 @@ class move_to_see:
 
     def compute_roll_pitch(self, blob_centre):
 
-        if self.interface.type == "ROS":
-            delta_x = (blob_centre[0] - self.image_cx)/self.image_width
-            delta_y = (blob_centre[1] - self.image_cy)/self.image_height
 
-        if self.interface.type == "SIM":
-            delta_x = (blob_centre[0] - self.image_cx)
-            delta_y = (blob_centre[1] - self.image_cy)
+        delta_x = (blob_centre[0] - self.image_cx)/self.image_width
+        delta_y = (blob_centre[1] - self.image_cy)/self.image_height
+
 
         #print ("Blob centre x = ", blob_centre[0])
         #print ("Blob centre y = ", blob_centre[1])
@@ -410,6 +403,8 @@ class move_to_see:
         else:
             delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
 
+
+        #MAIN SERVO LOOP
         while (self.avg_abs_gradient > self.tolerance) and (self.x_ref.pixel_size < self.max_pixel) and (self.count < self.max_count):
 
             # raw_input("Press Enter to continue...")
@@ -426,9 +421,6 @@ class move_to_see:
             dt = time.time() - t
             print ("Time to get Derivatives: ", dt)
 
-
-
-
             #print ('Numerical deltas: \n')
             #print (delta_matrix)
             #print "\n"
@@ -438,12 +430,12 @@ class move_to_see:
             # velocity = velocity.reshape((7,1))
             # self.interface.publishSpeedCommands(velocity)
             # self.interface.servoCamera(velocity.reshape((6,1)))
+            t = time.time()
 
             if (np.sum(delta_matrix) == 0.0):
                 print ("delta matrix = 0, stopping")
                 break
             else:
-
 
                 if CNN_model is not None:
                     ref_image = camera_images[4]
@@ -486,6 +478,8 @@ class move_to_see:
                 pose_delta = self.step_size*self.gradient
 
                 ##################################################
+                dt = time.time() - t
+                print ("Time to Compute Gradient: ", dt)
 
                 if self.interface.type == "ROS":
                     # pose = [0,0,0.1]
@@ -530,8 +524,10 @@ class move_to_see:
                     print ("Pitch: ", dPitch)
                     #pose = [0,0,0]
                     if self.set_orientation==True:
-                        pose_delta = np.append(pose_delta,-dPitch) #add 0 angle for euler x
-                        pose_delta = np.append(pose_delta,-dRoll)
+                        pose_delta = np.append(pose_delta,-dPitch/2) #add 0 angle for euler x
+                        pose_delta = np.append(pose_delta,dRoll/2)
+                        # pose_delta = np.append(pose_delta,0)
+                        # pose_delta = np.append(pose_delta,0)
                     else:
                         pose_delta = np.append(pose_delta,0)
                         pose_delta = np.append(pose_delta,0)
@@ -545,6 +541,9 @@ class move_to_see:
                     #add data to lists
                     ee_pose = self.interface.getCurrentPose()
                     self.ee_poses.append(ee_pose)
+
+                    #apply joint changes
+                    self.interface.step_sim()
 
                 ######################################3
 

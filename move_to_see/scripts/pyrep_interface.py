@@ -100,8 +100,15 @@ class pyrep_interface():
         self.image_width =  self.resolution[0]
         self.image_height =  self.resolution[1]
 
-        hsv_thresholds_low = np.array([0, 120, 50])
-        hsv_thresholds_high = np.array([12, 255, 255])
+        self.max_contour_size = 500
+        self.normalise_pixels = True
+        # hsv_thresholds_low = np.array([0, 120, 50])
+        # hsv_thresholds_high = np.array([12, 255, 255])
+
+        hsv_thresholds_low = np.array([0, 0, 50])
+        hsv_thresholds_high = np.array([30, 255, 255])
+
+
 
         self.lower_red = np.copy(hsv_thresholds_low)
         self.upper_red =  np.copy(hsv_thresholds_high)
@@ -123,13 +130,18 @@ class pyrep_interface():
         self.leaf_0 = Shape("leaf_0")
 
 
-        self.starting_joint_positions = np.array([0.0,-360,-270-45,-90,-135,-90,90]);
+        # self.starting_joint_positions = np.array([0.0,-360,-270-45,-90,-135,-90,90]);
+        # self.starting_joint_positions = np.array([0.0,-360,-270-45,-90,-135,-90,90]);
+        self.starting_joint_positions = np.array([0.0,0,25,-100,75,90,0]);
 
         #internal memory for pixel info
         self.pixel_sizes = self.init_list_of_objects(number_of_cameras, 0)
         self.pixel_sizes_filtered = self.init_list_of_objects(number_of_cameras, 0)
         self.blob_centres = self.init_list_of_objects(number_of_cameras, 0)
 
+        #parameter and memory for moving avg filtering
+        self.window_size = 5
+        self.pixel_sizes_buffer = self.init_list_of_objects(number_of_cameras,self.window_size)
 
         #### for displaying Images
         pygame.init()
@@ -160,7 +172,7 @@ class pyrep_interface():
 
 
     def getRefImage(self):
-        image = camera[4].capture_rgb()
+        image = self.colour_camera[4].capture_rgb()
         return image
 
     # def sin2d(self, x,y):
@@ -215,8 +227,11 @@ class pyrep_interface():
         print ("stopping sim")
         self.pr.stop()
 
+    def step_sim(self):
+        self.pr.step()
+
     def disconnect_sim():
-        print("Closing connection to vrep")
+        print("Closing connection to sim")
         self.pr.shutdown()
 
     def init_list_of_objects(self,size1, size2):
@@ -248,49 +263,43 @@ class pyrep_interface():
     def set_joints_degrees(self,joint_values):
         self.agent.set_joint_positions(np.deg2rad(joint_values))
 
-    def setCameraOffsets(self, radius, link_offset, angle, set_euler_angles=False):
+    def setCameraOffsets(self, xy_offset, z_offset, link_offset, set_euler_angles=False):
 
         #offset from camera array to end effector
         link_offset = link_offset
 
-        #if these are different makes a rectangular array not a square
-        theta = np.deg2rad(angle)
-        phi = np.deg2rad(angle)
+        row00 = [-xy_offset, xy_offset, z_offset] #0
+        row01 = [0, xy_offset, z_offset/2] #1
+        row02 = [xy_offset, xy_offset, z_offset] #2
+        row10 =[-xy_offset, 0, z_offset/2] #3
+        row11 = [0,0,0] #4
+        row12 = [xy_offset, 0, z_offset/2] #5
+        row20 = [-xy_offset, -xy_offset, z_offset] #6
+        row21 = [0, -xy_offset, z_offset/2] #7
+        row22 = [xy_offset, -xy_offset, z_offset] #8
+        grid = np.array([[row00, row01, row02],[row10, row11, row12],[row20, row21, row22]])
 
-        #use a grid to construct the camera array
-        theta_grid=[math.pi/2 - theta,math.pi/2 - theta,math.pi/2 - theta,math.pi/2,math.pi/2,math.pi/2,math.pi/2 + theta, math.pi/2 + theta, math.pi/2 + theta]
-        phi_grid=[phi,0,-1*phi,phi,0,-1*phi,phi,0,-1*phi]
+        index = 0
+        for i in range(0,3):
+            for j in range(0,3):
 
-        for i in range(0,9):
-            # euler_angles = self.camera[j].get_orientation(self.ref_camera) #input is get orientation relative to
+                x = grid[i][j][0]
+                y = grid[i][j][1]
+                z = grid[i][j][2]
 
-            if i == 3:
-                z = 0
-            else:
-                z = -radius*math.sin(theta_grid[i])*math.cos(phi_grid[i]) + radius + link_offset
-
-            x = radius*math.sin(theta_grid[i])*math.sin(phi_grid[i])
-            y = radius*math.cos(theta_grid[i])
-
-            # transform = sim.buildMatrix({x,y,z},euler_angles)
-            # transform2 = sim.buildMatrix({0,0,0},{-phi_grid[i],theta_grid[i]-math.pi/2,0})
-            # transform3 = sim.multiplyMatrices(transform,transform2)
-
-            self.camera[i].set_position(np.array([x,y,z]),relative_to=self.camera_link)
-
+                self.camera[index].set_position(np.array([x,y,z]),relative_to=self.camera_link)
+                self.camera[index].set_orientation(np.array([0,0,0]),relative_to=self.camera_link)
+                index = index + 1
 
 
     def getCurrentPose(self):
         emptyBuff = bytearray()
-        pos = self.ee_handle.get_position(relative_to=self.base_frame_handle)
-        orientation = self.ee_handle.get_orientation(relative_to=self.base_frame_handle)
-        return position+orientation
+        pos = self.ee_handle.get_position(relative_to=self.base_frame)
+        orientation = self.ee_handle.get_orientation(relative_to=self.base_frame)
+        return pos+orientation
 
 
     def getCameraPositions(self):
-        inInts=[]
-        inFloats=[]
-        emptyBuff = bytearray()
 
         camera_positions = np.zeros([3,self.nCameras])
         camera_poses = np.zeros([6,self.nCameras])
@@ -300,10 +309,12 @@ class pyrep_interface():
 
             camera_position = self.camera[i].get_position(relative_to=self.ref_camera)
             camera_orientation = self.camera[i].get_orientation(relative_to=self.ref_camera)
-
+            print(camera_position)
+            print(camera_orientation)
             camera_positions[0:3,i] = camera_position
             camera_orientations[0:3,i] = camera_orientation
-            camera_poses[0:6,i] = camera_position + camera_orientation
+            camera_poses[0:3,i] = camera_position
+            camera_poses[3:6,i] = camera_orientation
 
 
         return camera_positions,camera_orientations,camera_poses
@@ -330,33 +341,34 @@ class pyrep_interface():
 
         for i in range(0,self.nCameras):
             self.image_array[i] = self.getImage(i)
-            # object, image = self.detect_objects(self.image_array[i])
-            # objects.append(object)
-            # segmentedImage_array.append(image)
+            object, image = self.detect_objects(self.image_array[i])
+
+            objects.append(object)
+            segmentedImage_array.append(image)
             #
-            # if len(object) > 0:
-            #     self.blob_centres[i] = (object['centre_x'], object['centre_y'])
-            #     #divide by maximum pixel size
-            #     if(self.normalise_pixels):
-            #         self.pixel_sizes[i] = object['size']/float(self.image_width*self.image_height)
-            #     else:
-            #         self.pixel_sizes[i] = object['size']
-            #     #keep a sliding window of sizes for filtering
-            #     self.pixel_sizes_buffer[i].append(copy.deepcopy(self.pixel_sizes[i]))
-            #     del self.pixel_sizes_buffer[i][0]
-            #     self.pixel_sizes_filtered[i] = sum(self.pixel_sizes_buffer[i])/self.window_size
+            if len(object) > 0:
+                self.blob_centres[i] = (object['centre_x'], object['centre_y'])
+                #divide by maximum pixel size
+                if(self.normalise_pixels):
+                    self.pixel_sizes[i] = object['size']/float(self.image_width*self.image_height)
+                else:
+                    self.pixel_sizes[i] = object['size']
+                #keep a sliding window of sizes for filtering
+                self.pixel_sizes_buffer[i].append(self.pixel_sizes[i])
+                del self.pixel_sizes_buffer[i][0]
+                self.pixel_sizes_filtered[i] = sum(self.pixel_sizes_buffer[i])/self.window_size
 
         row_1 = np.hstack((self.image_array[2], self.image_array[1], self.image_array[0]))
         row_2 = np.hstack((self.image_array[5], self.image_array[4], self.image_array[3]))
         row_3 = np.hstack((self.image_array[8], self.image_array[7], self.image_array[6]))
         image_matrix = np.vstack((row_1, row_2, row_3))
 
-        # seg_row_1 = np.hstack((segmentedImage_array[2], segmentedImage_array[1], segmentedImage_array[0]))
-        # seg_row_2 = np.hstack((segmentedImage_array[5], segmentedImage_array[4], segmentedImage_array[3]))
-        # seg_row_3 = np.hstack((segmentedImage_array[8], segmentedImage_array[7], segmentedImage_array[6]))
-        # seg_image_matrix = np.vstack((seg_row_1, seg_row_2, seg_row_3))
+        seg_row_1 = np.hstack((segmentedImage_array[2], segmentedImage_array[1], segmentedImage_array[0]))
+        seg_row_2 = np.hstack((segmentedImage_array[5], segmentedImage_array[4], segmentedImage_array[3]))
+        seg_row_3 = np.hstack((segmentedImage_array[8], segmentedImage_array[7], segmentedImage_array[6]))
+        seg_image_matrix = np.vstack((seg_row_1, seg_row_2, seg_row_3))
 
-        self.displayImage(image_matrix)
+        self.displayImage(seg_image_matrix)
         # cv2.imshow("Images", image_matrix)
         # cv2.imshow("Segmented Images", seg_image_matrix)
 
@@ -366,20 +378,21 @@ class pyrep_interface():
         # ret_images = copy.deepcopy(self.cv_image_array)
 
         # return self.pixel_sizes_filtered, self.blob_centres
-        # return self.pixel_sizes_filtered,self.blob_centres,self.pixel_sizes,ret_images, objects
+        return self.pixel_sizes_filtered,self.blob_centres,self.pixel_sizes,self.image_array, objects
 
 
 
     def servoPoseEuler(self, delta_pose):
         # start_pos, start_euler = self.agent.get_tip().get_position(relative_to=self.ref_camera), self.get_tip().get_orientation(relative_to=self.ref_camera)
-
+        print("Servoing to Delta Pose")
+        print(delta_pose)
         #hack to set ik target relative to reference camera
         self.agent._ik_target.set_position(delta_pose[0:3], relative_to=self.ref_camera)
-        self.agent._ik_target.set_position(delta_pose[3:6], relative_to=self.ref_camera)
+        self.agent._ik_target.set_orientation(delta_pose[3:6], relative_to=self.ref_camera)
 
         #once ik tarket set, grab pose relative to base frame
         pos_in_base_frame = self.agent._ik_target.get_position()
-        euler_in_base_frame = self.agent._ik_target.get_position()
+        euler_in_base_frame = self.agent._ik_target.get_orientation()
 
         try:
             #finds ik solution relative to base frame
@@ -389,13 +402,14 @@ class pyrep_interface():
             return False
 
         self.agent.set_joint_target_positions(joint_angles)
-        pr.step()
+        # for i in range(0,20):
+        #     self.pr.step()
+
         return True
 
     def detect_objects(self, image):
            # Convert BGR to HSV
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
+        hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
         hsv = cv2.GaussianBlur(hsv,(5,5),0)
 
         # Threshold the HSV image to get only blue colors
@@ -407,8 +421,9 @@ class pyrep_interface():
         mask = cv2.dilate(erode,np.ones((5,5)))
 
         segmentedImage = cv2.bitwise_and(image,image, mask=mask)
+        # segmentedImage = hsv
 
-        _, contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         object_ = []
 
         if len(contours) != 0:
