@@ -43,12 +43,12 @@ import scipy
 import scipy.sparse.linalg
 import scipy.linalg
 
-import torch
+# import torch
 
 import rospy
 from tf.transformations import quaternion_from_euler
 
-from torchvision import transforms
+# from torchvision import transforms
 
 #import pylab as plb
 

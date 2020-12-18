@@ -63,8 +63,8 @@ class move_to_see:
             import rospy
             from tf.transformations import quaternion_from_euler
             import ros_interface as ri
-            import torch
-            from torchvision import transforms
+            # import torch
+            # from torchvision import transforms
             self.interface = ri.ros_interface(number_of_cameras)
         elif interface == "SIM":
             from pyrep_interface import pyrep_interface
@@ -418,6 +418,8 @@ class move_to_see:
                     self.images[i].append(camera_images[i])
                     self.objects[i].append(objects[i])
 
+            print("Delta matrix:  {}".format(delta_matrix))
+
             dt = time.time() - t
             print ("Time to get Derivatives: ", dt)
 
@@ -450,6 +452,9 @@ class move_to_see:
                 delta_flat = np.delete(delta_matrix.reshape((1,9)),4,None)
                 numerical_derivative = np.divide(delta_flat,self.camera_vector_mags)
                 self.vanilla_gradient = self.computeDirDerivative(self.camera_unit_vectors,numerical_derivative)
+
+                print("Numerical derivative: {}".format(numerical_derivative))
+                print("Vanilla gradient: {}".format(self.vanilla_gradient))
 
                 if CNN_model is None:
                     self.gradient = self.vanilla_gradient
