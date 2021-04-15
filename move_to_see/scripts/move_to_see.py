@@ -66,11 +66,9 @@ class move_to_see:
             import torch
             from torchvision import transforms
             self.interface = ri.ros_interface(number_of_cameras)
-        elif interface == "VREP":
-            print ('Creating vrep interface')
-            import vrep_interface as vi
-            self.interface = vi.vrep_interface(number_of_cameras)
-            self.interface.start_sim()
+        elif interface == "SIM":
+            from pyrep_interface import pyrep_interface
+            self.interface = pyrep_interface(number_of_cameras, '../../vrep_scenes/PyRep_harvey.ttt')
 
         #vrep.simxFinish(-1) # just in case, close all opened connections
         #clientID=vrep.simxStart('127.0.0.1',19997,True,True,5000,5) # Connect to V-REP
@@ -88,30 +86,21 @@ class move_to_see:
         self.counts = []
 
         #res,robotHandle=vrep.simxGetObjectHandle(clientID,'UR5',vrep.simx_opmode_oneshot_wait)
-        if self.interface.type == "VREP":
-            plt.clf()
-            self.fig = plt.figure(1)
+        plt.clf()
+        self.fig = plt.figure(1)
 
-            plt.ion()
-            plt.show()
-
-        if self.interface.type == "ROS":
-            plt.clf()
-            self.fig = plt.figure(1)
-
-            plt.ion()
-            plt.show()
+        plt.ion()
+        plt.show()
 
         self.dist_weight = 0.0
         self.size_weight = size_weight
         self.manip_weight = manip_weight
 
-        if self.interface.type == "VREP":
-            self.image_width = 256
-            self.image_height = 256
-            self.image_cx = 0.5
-            self.image_cy = 0.5
-
+        if self.interface.type == "SIM":
+            self.image_width = self.interface.image_width
+            self.image_height = self.interface.image_width
+            self.image_cx = round(self.image_width/2)
+            self.image_cy = round(self.image_height/2)
             self.FOV_x = 60
             self.FOV_y = 60
 
@@ -126,19 +115,11 @@ class move_to_see:
             self.FOV_x = 62.2
             self.FOV_y = 48.8
 
-
-
-
-        startTime=time.time()
-
         self.ref_index = 4 #index of middle camera
         self.ref_size = 0 #use this as a stopping condition
-
         self.max_size = []
         self.max_distance = []
-
         self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
-
         self.queue_size = 5
         self.tolerance = end_tolerance
         self.max_pixel = max_pixel
@@ -146,10 +127,10 @@ class move_to_see:
         self.images = []
         for i in range(0,self.nCameras):
             self.images.append([])
-
         self.objects = []
         for i in range(0,self.nCameras):
             self.objects.append([])
+
         self.ee_poses = []
         self.pose_deltas = []
         self.ref_size = 0.0
@@ -172,6 +153,8 @@ class move_to_see:
         self.abs_gradient = 50
         self.avg_abs_gradient = 50
 
+        startTime=time.time()
+
     def reset(self):
 
         self.ee_poses = []
@@ -193,34 +176,18 @@ class move_to_see:
         self.size_weight = size_weight
         self.manip_weight = manip_weight
 
-    def setCameraPosition(self,radius,link_offset,camera_angle,set_euler_angles):
+    def setCameraPosition(self,xy_offset,z_offset,link_offset,set_euler_angles=False):
 
-        self.interface.setCameraOffsets(radius,link_offset,camera_angle,set_euler_angles)
-
+        self.interface.setCameraOffsets(xy_offset,z_offset,link_offset,set_euler_angles)
         self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
+        self.updateCameraPosition()
 
-        #delete the fourth camera value as this is the reference camera
-        self.camera_vectors = (np.delete(self.camera_positions,4,1)).transpose()
-        self.camera_vector_mags = np.linalg.norm(self.camera_vectors,None,1)
-        self.camera_unit_vectors = self.camera_vectors/self.camera_vector_mags[:,np.newaxis]
-
-    def initCameraPosition(self):
+    def updateCameraPosition(self):
 
         self.camera_positions, self.camera_orientations, self.camera_poses = self.interface.getCameraPositions()
         self.camera_vectors = (np.delete(self.camera_positions,4,1)).transpose()
         self.camera_vector_mags = np.linalg.norm(self.camera_vectors,None,1)
         self.camera_unit_vectors = self.camera_vectors/self.camera_vector_mags[:,np.newaxis]
-
-
-    def computePixelDifferent(self, image_1,image_2):
-
-        if not (image_1.shape == image_2.shape):
-            print ('images are not of the same size')
-            return 0
-
-        diffImage = np.zeros(image_1.shape)
-        cv.absdiff(image_1,image_2,diffImage)
-
 
 
     def calcNumericalDerivative(self, x1, x2):
@@ -231,23 +198,17 @@ class move_to_see:
         dist_weight = self.dist_weight
         size_weight = self.size_weight
         manip_weight = self.manip_weight
-
-        #ref_size, blob_centre,
-
         #ensure weights sum to 1
         dist_weight = dist_weight/(dist_weight+size_weight+manip_weight)
         size_weight = size_weight/(dist_weight+size_weight+manip_weight)
         manip_weight = manip_weight/(dist_weight+size_weight+manip_weight)
 
         # maxPixels = 256 * 256 * 2/3
-
         #image_cx = 0.5
         #image_cy = 0.5
 
-
         #distance1 = 1 - math.sqrt(math.pow(x1.blob_centre[0] - self.image_cx,2) + math.pow(x1.blob_centre[1] - self.image_cy,2))
         #distance2 = 1 - math.sqrt(math.pow(x2.blob_centre[0] - self.image_cx,2) + math.pow(x2.blob_centre[1] - self.image_cy,2))
-
 
         #if ref_distance > 0:
              # manip_diff = manip-ref_manip
@@ -275,16 +236,16 @@ class move_to_see:
         delta_matrix = np.zeros([3,3])
 
         #get the reference pixel size and manipulability (camera 5 indexed at 0)
-        if self.interface.type == "VREP":
-            __, pixel_sizes, blob_centres, manip = self.interface.getObjectiveFunctionValues()
-            pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
+        if self.interface.type == "SIM":
+            pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
+            # pixel_sizes_noise = pixel_sizes + np.random.normal(0,noise_std,len(pixel_sizes))
 
         elif self.interface.type == "ROS":
             pixel_sizes, blob_centres, pixel_sizes_unfiltered, camera_images, objects = self.interface.getObjectiveFunctionValues()
 
         x = []
         x_ref = Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip=0.0)
-                
+
         for i in range(0,self.nCameras):
 
             x.append(Xtype(pixel_size=0.0,blob_centre=[0.0,0.0], manip = 0.0))
@@ -335,7 +296,6 @@ class move_to_see:
         derivative = x.dot(direction_vectors_inv)
 
         residuals = derivative.dot(direction_vectors.transpose()) - x
-
 
         #print ("residuals: \n")
         #print (np.insert(residuals,4,0.0).reshape((3,3)))
@@ -391,13 +351,10 @@ class move_to_see:
 
     def compute_roll_pitch(self, blob_centre):
 
-        if self.interface.type == "ROS":
-            delta_x = (blob_centre[0] - self.image_cx)/self.image_width
-            delta_y = (blob_centre[1] - self.image_cy)/self.image_height
 
-        if self.interface.type == "VREP":
-            delta_x = (blob_centre[0] - self.image_cx)
-            delta_y = (blob_centre[1] - self.image_cy)
+        delta_x = (blob_centre[0] - self.image_cx)/self.image_width
+        delta_y = (blob_centre[1] - self.image_cy)/self.image_height
+
 
         #print ("Blob centre x = ", blob_centre[0])
         #print ("Blob centre y = ", blob_centre[1])
@@ -440,18 +397,20 @@ class move_to_see:
         print ('should be smaller then tolerance: ', self.tolerance)
 
 
-        if self.interface.type == "VREP":
+        if self.interface.type == "SIM":
             self.start_image = self.interface.getRefImage()
             delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise, return_images=False)
         else:
             delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
 
+
+        #MAIN SERVO LOOP
         while (self.avg_abs_gradient > self.tolerance) and (self.x_ref.pixel_size < self.max_pixel) and (self.count < self.max_count):
 
             # raw_input("Press Enter to continue...")
 
             t = time.time()
-            if self.interface.type == "VREP":
+            if self.interface.type == "SIM":
                 delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val = self.getNumericalDerivatives(self.noise_std,use_noise, return_images=False)
             else:
                 delta_matrix, self.x_ref, self.x, self.ref_size_no_noise, self.x_ref_obj_val, camera_images, objects = self.getNumericalDerivatives(self.noise_std,use_noise)
@@ -462,9 +421,6 @@ class move_to_see:
             dt = time.time() - t
             print ("Time to get Derivatives: ", dt)
 
-            
-
-
             #print ('Numerical deltas: \n')
             #print (delta_matrix)
             #print "\n"
@@ -474,12 +430,12 @@ class move_to_see:
             # velocity = velocity.reshape((7,1))
             # self.interface.publishSpeedCommands(velocity)
             # self.interface.servoCamera(velocity.reshape((6,1)))
+            t = time.time()
 
             if (np.sum(delta_matrix) == 0.0):
                 print ("delta matrix = 0, stopping")
                 break
             else:
-
 
                 if CNN_model is not None:
                     ref_image = camera_images[4]
@@ -522,6 +478,8 @@ class move_to_see:
                 pose_delta = self.step_size*self.gradient
 
                 ##################################################
+                dt = time.time() - t
+                print ("Time to Compute Gradient: ", dt)
 
                 if self.interface.type == "ROS":
                     # pose = [0,0,0.1]
@@ -559,15 +517,17 @@ class move_to_see:
 
                     #self.interface.publish_data(pixel_sizes,pixel_sizes_unfiltered,self.x_ref.pixel_size, self.count)
 
-                elif self.interface.type == "VREP":
+                elif self.interface.type == "SIM":
 
                     print ("Pose delta = ", pose_delta)
                     print ("Roll: ", dRoll)
                     print ("Pitch: ", dPitch)
                     #pose = [0,0,0]
                     if self.set_orientation==True:
-                        pose_delta = np.append(pose_delta,-dPitch) #add 0 angle for euler x
-                        pose_delta = np.append(pose_delta,-dRoll)
+                        pose_delta = np.append(pose_delta,-dPitch/2) #add 0 angle for euler x
+                        pose_delta = np.append(pose_delta,dRoll/2)
+                        # pose_delta = np.append(pose_delta,0)
+                        # pose_delta = np.append(pose_delta,0)
                     else:
                         pose_delta = np.append(pose_delta,0)
                         pose_delta = np.append(pose_delta,0)
@@ -581,6 +541,9 @@ class move_to_see:
                     #add data to lists
                     ee_pose = self.interface.getCurrentPose()
                     self.ee_poses.append(ee_pose)
+
+                    #apply joint changes
+                    self.interface.step_sim()
 
                 ######################################3
 
@@ -596,7 +559,7 @@ class move_to_see:
                     #self.ref_size_data2.append(self.ref_size_no_noise)
 
                 # plot runtime data
-                if self.interface.type == "VREP":
+                if self.interface.type == "SIM":
                     plt.figure(1)
                     self.fig.clf()
 
@@ -677,7 +640,7 @@ class move_to_see:
             #print (np.insert(numerical_derivative,4,0.0).reshape((3,3)))
             #print "\n"
 
-        if self.interface.type == "VREP":
+        if self.interface.type == "SIM":
             self.end_image = self.interface.getRefImage()
 
         print ('cost within tolerance, finished')
@@ -690,9 +653,9 @@ class move_to_see:
         print ("\n")
 
         ret_dict = {}
-        
+
         if self.interface.type == "ROS":
-           
+
             ret_dict['images'] = self.images
             ret_dict['objects'] = self.objects
 
@@ -703,7 +666,7 @@ class move_to_see:
         ret_dict['ee_pose'] = self.ee_poses
         ret_dict['pose_deltas'] = self.pose_deltas
 
-        if self.interface.type == "VREP":
+        if self.interface.type == "SIM":
             ret_dict['start_end_images'] = [self.start_image, self.end_image]
 
         return ret_dict
@@ -719,10 +682,10 @@ if __name__=="__main__":
         print ("Running move to see node")
 
         mvs = move_to_see(9,"ROS",step_size=0.001, size_weight=1.0, manip_weight=0.0,end_tolerance=0.75,max_pixel=0.4)
-        mvs.initCameraPosition()
+        mvs.updateCameraPosition()
 
     else:
-        mvs = move_to_see(9,"VREP")
+        mvs = move_to_see(9,"SIM")
 
     data = mvs.execute()
     #cProfile.run('move_to_see()')
