@@ -8,8 +8,6 @@ path = '..\..\scripts'
 print("adding to path: ", path)
 sys.path.insert(0, path)
 
-import vrep_interface
-
 import gym
 import time
 import math
@@ -47,11 +45,16 @@ class action(Enum):
 
 
 #####
+from pyrep_interface import pyrep_interface
 
-class vrep_env(vrep_interface.vrep_interface):
 
-    def __init__(self, device):
-        self.n_cameras = 9
+class dqn_interface(pyrep_interface):
+
+    def __init__(self, number_of_cameras, device):
+
+        super().__init__(number_of_cameras, '../../vrep_scenes/PyRep_harvey.ttt')
+
+        self.n_cameras = number_of_cameras
         self.ref_camera_index = 4
         
         self.steps = 0

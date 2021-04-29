@@ -6,7 +6,7 @@ This script contains examples of:
 """
 from os.path import dirname, join, abspath
 from pyrep import PyRep
-from pyrep.robots.arms.harvey import Harvey
+# from pyrep.robots.arms.harvey import Harvey
 
 from move_to_see import move_to_see
 
@@ -15,7 +15,7 @@ DELTA = 0.01
 pr = PyRep()
 pr.launch(SCENE_FILE, headless=False)
 pr.start()
-agent = Harvey()
+# agent = Harvey()
 
 starting_joint_positions = agent.get_joint_positions()
 pos, quat = agent.get_tip().get_position(), agent.get_tip().get_quaternion()
