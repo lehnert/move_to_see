@@ -77,10 +77,10 @@ class pyrep_interface():
         #setup VREP connection
         print ('initialising sim')
         if(SCENE_FILE == None):
-            SCENE_FILE = join(dirname(abspath(__file__)), '../../vrep_scenes/PyRep_harvey.ttt')
+            SCENE_FILE = join(dirname(abspath(__file__)), 'home/chris/vrep_scenes/PyRep_harvey.ttt')
 
         self.pr = PyRep()
-        self.pr.launch(SCENE_FILE, headless=False)
+        self.pr.launch(SCENE_FILE, headless=True)
         self.pr.start()
         self.agent = Harvey()
 
@@ -147,7 +147,8 @@ class pyrep_interface():
         pygame.init()
         self.first_call = True
         self.border=50
-        self.screen = pygame.display.set_mode((3*self.image_width+(2*self.border), 3*self.image_height+(2*self.border)))
+        # self.screen = pygame.display.set_mode((3*self.image_width+(2*self.border), 3*self.image_height+(2*self.border)))
+        self.screen = pygame.display.set_mode((self.image_width+(2*self.border), self.image_height+(2*self.border)))
         pygame.display.set_caption("PyRep Images")
         done = False
         self.clock = pygame.time.Clock()
@@ -337,6 +338,7 @@ class pyrep_interface():
         manip = []
         segmentedImage_array = []
         objects = []
+        success = False
 
 
         for i in range(0,self.nCameras):
@@ -347,6 +349,7 @@ class pyrep_interface():
             segmentedImage_array.append(image)
             #
             if len(object) > 0:
+                success = True
                 self.blob_centres[i] = (object['centre_x'], object['centre_y'])
                 #divide by maximum pixel size
                 if(self.normalise_pixels):
@@ -379,7 +382,7 @@ class pyrep_interface():
         # ret_images = copy.deepcopy(self.cv_image_array)
 
         # return self.pixel_sizes_filtered, self.blob_centres
-        return self.pixel_sizes_filtered,self.blob_centres,self.pixel_sizes,self.image_array, objects
+        return success, self.pixel_sizes_filtered,self.blob_centres,self.pixel_sizes,self.image_array, objects
 
 
 
@@ -424,7 +427,7 @@ class pyrep_interface():
         segmentedImage = cv2.bitwise_and(image,image, mask=mask)
         # segmentedImage = hsv
 
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2:]
         object_ = []
 
         if len(contours) != 0:
