@@ -70,7 +70,7 @@ class Harvey(Arm):
 class pyrep_interface():
 
 
-    def __init__(self, number_of_cameras, SCENE_FILE=None):
+    def __init__(self, number_of_cameras, SCENE_FILE=None, headless=True):
 
         self.type = "SIM"
 
@@ -80,7 +80,7 @@ class pyrep_interface():
             SCENE_FILE = join(dirname(abspath(__file__)), 'home/chris/vrep_scenes/PyRep_harvey.ttt')
 
         self.pr = PyRep()
-        self.pr.launch(SCENE_FILE, headless=True)
+        self.pr.launch(SCENE_FILE, headless=headless)
         self.pr.start()
         self.agent = Harvey()
 

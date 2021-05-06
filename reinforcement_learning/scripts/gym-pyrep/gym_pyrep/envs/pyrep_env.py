@@ -13,7 +13,7 @@ class PyrepEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.interface = pyrep_interface(9, '/home/chris/vrep_scenes/PyRep_harvey.ttt')
+        self.interface = pyrep_interface(9, '/home/chris/vrep_scenes/PyRep_harvey.ttt', headless=False)
         
         self.image_width = self.interface.image_width
         self.image_height = self.interface.image_width
@@ -49,6 +49,7 @@ class PyrepEnv(gym.Env):
 
         deltaPose = np.array([0,0,0,0,0,0])
         angle_scale = 2
+        info = {}
 
         if action==self.actions['up']:
             deltaPose = deltaPose + [self.step_size,0,0,0,0,0]
@@ -84,7 +85,10 @@ class PyrepEnv(gym.Env):
 
         if not self.interface.servoPoseEuler(deltaPose):
             print("Failed to move to pose")
-            return 0.0, True 
+            observation = self.interface.getImage(4)  
+            done = True
+            reward = 0.0
+            return observation, reward, done, info
         
         self.interface.step_sim()
 
@@ -95,12 +99,13 @@ class PyrepEnv(gym.Env):
 
         #num_pixels = self.image_height*self.image_width
         # norm_pixel_sizes = np.array(pixel_sizes)/num_pixels
+        done = False
         if success:
             reward = pixel_sizes[4]
             # reward = pixel_sizes[self.ref_camera_index] - self.init_reward
             print("Current Reward: ", reward)
             self.steps += 1
-            done = False
+            
             if reward > self.max_reward:
                 print('Reward maximised: done')
                 done = True
@@ -112,8 +117,7 @@ class PyrepEnv(gym.Env):
         else:
             print("Failed to get reward")
             reward = 0.0
-        
-        info = {}
+
         return observation, reward, done, info
 
 
