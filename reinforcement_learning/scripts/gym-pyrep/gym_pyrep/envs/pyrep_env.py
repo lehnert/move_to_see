@@ -13,7 +13,7 @@ class PyrepEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.interface = pyrep_interface(9, '/home/chris/vrep_scenes/PyRep_harvey.ttt', headless=False)
+        self.interface = pyrep_interface(9, '/home/chris/vrep_scenes/PyRep_harvey.ttt', headless=True)
         
         self.image_width = self.interface.image_width
         self.image_height = self.interface.image_width
@@ -106,6 +106,10 @@ class PyrepEnv(gym.Env):
             print("Current Reward: ", reward)
             self.steps += 1
             
+            if not reward:
+                print('reward not found: done')
+                reward = 0.0
+                done = True
             if reward > self.max_reward:
                 print('Reward maximised: done')
                 done = True

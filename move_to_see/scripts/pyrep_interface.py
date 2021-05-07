@@ -165,7 +165,10 @@ class pyrep_interface():
         # self.screen.blit(text, (border,self.height+border))
         # N = N + 1
         pygame.display.flip()
-        self.clock.tick(60)
+        pygame.event.pump()
+
+        # pygame.display.update()
+        # self.clock.tick(60)
 
 
     def __del__(self):
@@ -388,8 +391,8 @@ class pyrep_interface():
 
     def servoPoseEuler(self, delta_pose):
         # start_pos, start_euler = self.agent.get_tip().get_position(relative_to=self.ref_camera), self.get_tip().get_orientation(relative_to=self.ref_camera)
-        print("Servoing to Delta Pose")
-        print(delta_pose)
+        # print("Servoing to Delta Pose")
+        # print(delta_pose)
         #hack to set ik target relative to reference camera
         self.agent._ik_target.set_position(delta_pose[0:3], relative_to=self.ref_camera)
         self.agent._ik_target.set_orientation(delta_pose[3:6], relative_to=self.ref_camera)

@@ -16,20 +16,19 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
+
+from torch.utils.tensorboard import SummaryWriter
+# from tensorboardX import SummaryWriter\
+
+writer = SummaryWriter()
+
 # from baselines import deepq
 
-import matplotlib
-import matplotlib.pyplot as plt
+# import matplotlib
+# import matplotlib.pyplot as plt
 
 from PIL import Image
 
-# is_ipython = 'inline' in matplotlib.get_backend()
-# if is_ipython:
-#     from IPython import display
-
-# plt.ion()
-
-###########################
 
 Transition = namedtuple('Transition',
                 ('state', 'action', 'next_state', 'reward'))
@@ -93,17 +92,17 @@ class ReplayMemory(object):
 ############################
 
 
-class agent_trainer():
+class agent():
 
     def __init__(self, gym_env, device):
 
-        self.BATCH_SIZE = 5 #128
+        self.BATCH_SIZE = 128 #128
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
         self.EPS_DECAY = 200
         self.TARGET_UPDATE = 10
-
+        self.MAX_STEPS = 40
         self.gym_env = gym_env
         self.device = device
 
@@ -119,14 +118,17 @@ class agent_trainer():
 
         self.policy_net = DQN(self.image_height, self.image_width, self.n_actions, self.device).to(self.device)
         self.target_net = DQN(self.image_height, self.image_width, self.n_actions, self.device).to(self.device)
+        
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.memory = ReplayMemory(10000)
 
+        self.optimisation_step = 0
         self.steps_done = 0
         self.episode_average_reward = []
+        self.running_loss = 0
 
     def get_observation(self):
 
@@ -197,7 +199,7 @@ class agent_trainer():
             display.display(plt.gcf())
 
 
-    def optimize_model(self):
+    def optimize_model(self, step, episode):
         if len(self.memory) < self.BATCH_SIZE:
             return
         transitions = self.memory.sample(self.BATCH_SIZE)
@@ -228,32 +230,41 @@ class agent_trainer():
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
         next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
         # Compute Huber loss
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-
+        writer.add_scalar("Loss/train", loss, self.optimisation_step)
+        self.optimisation_step += 1
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
+
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
+
+        # self.running_loss += loss.item()
+        # writer.add_scalar('training loss', self.running_loss/step, step*episode)
 
     def train(self, num_episodes=50):
 
         for i_episode in range(num_episodes):
             # Initialize the environment and state
+            print("Episode: ", i_episode)
             self.gym_env.reset()
             last_observation = self.get_observation()
             current_observation = self.get_observation()
             state = current_observation - last_observation
 
             avg_reward = 0
+            max_reward = 0
             
-            for t in count():
+            #roll out episode
+            for n_steps in count():
                 # Select and perform an action
                 # Observe next state
 
@@ -262,8 +273,16 @@ class agent_trainer():
                 action = self.select_action(state)
                 _, reward, done, _ = self.gym_env.step(action.item())
                 current_observation = self.get_observation()
-                reward = torch.tensor([reward], device=self.device)
+
                 avg_reward += avg_reward + reward
+                if reward > max_reward:
+                    max_reward = reward
+
+                reward = torch.tensor([reward], device=self.device)
+                
+
+                # writer.add_image('observation', current_observation[0,:,:,:], n_steps*(i_episode+1), dataformats='CHW')
+                # writer.add_scalar('reward',reward, n_steps*(i_episode+1))
 
                 #remember last observation
                                 
@@ -279,16 +298,24 @@ class agent_trainer():
                 state = next_state
 
                 # Perform one step of the optimization (on the policy network)
-                self.optimize_model()
+                self.optimize_model(n_steps, i_episode)
 
-                if done:
-                    self.episode_average_reward.append(avg_reward/t)
-                    self.plot()
+                if done or n_steps > self.MAX_STEPS:
+                    writer.add_scalar('Average Reward', avg_reward/(n_steps + 1), i_episode)
+                    writer.add_scalar('Final Reward',reward, i_episode)
+                    writer.add_scalar('Max Reward',max_reward, i_episode)
+                    writer.add_image('observation', current_observation[0,:,:,:], i_episode, dataformats='CHW')
+                    self.episode_average_reward.append(avg_reward/n_steps)
+                    # self.plot()
                     break
-
+            
+            print("episode finished with steps: ", n_steps)
             # Update the target network, copying all weights and biases in DQN
-            if i_episode % TARGET_UPDATE == 0:
-                target_net.load_state_dict(policy_net.state_dict())
+            if i_episode % self.TARGET_UPDATE == 0:
+                self.target_net.load_state_dict(self.policy_net.state_dict())
+
+
+            writer.flush()
 
 # model = DQN('MlpPolicy', env, learning_rate=1e-3, prioritized_replay=True, verbose=1)
 # model.learn(total_timesteps=int(2e5))
@@ -299,9 +326,9 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    trainer = agent_trainer(gym_env, device)
+    agent_ = agent(gym_env, device)
 
-    trainer.train(num_episodes=100)
+    agent_.train(num_episodes=500)
 
 
 
