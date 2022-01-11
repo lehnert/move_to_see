@@ -48,7 +48,7 @@ leaf_pos_offset = [cx + offset_x - 0.1,cy + offset_y + occlusion_y,cz + offset_z
 
 mts = move_to_see(9,"SIM", step_size=0.001,            # MTS run conditions
                 size_weight=1.0, manip_weight=0.0,    # MTS objective funtion weights
-                end_tolerance=1.5,max_pixel=0.4)      # MTS termination conditions mts.initCameraPosition()
+                end_tolerance=1.5,max_pixel=0.4, max_count=500)      # MTS termination conditions mts.initCameraPosition()
 
 
 

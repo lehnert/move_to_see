@@ -68,7 +68,9 @@ class move_to_see:
             self.interface = ri.ros_interface(number_of_cameras)
         elif interface == "SIM":
             from pyrep_interface import pyrep_interface
-            self.interface = pyrep_interface(number_of_cameras, '../../vrep_scenes/PyRep_harvey.ttt')
+            self.interface = pyrep_interface(number_of_cameras, '../../vrep_scenes/PyRep_harvey_cocked_back.ttt')
+            # self.interface = pyrep_interface(number_of_cameras, '../../vrep_scenes/PyRep_harvey_cocked_back_default.ttt')
+            # self.interface = pyrep_interface(number_of_cameras, '../../vrep_scenes/PyRep_harvey1.ttt')
 
         #vrep.simxFinish(-1) # just in case, close all opened connections
         #clientID=vrep.simxStart('127.0.0.1',19997,True,True,5000,5) # Connect to V-REP
@@ -377,7 +379,7 @@ class move_to_see:
         if CNN_model is not None:
             trans_image = transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.ToTensor(),
+                transforms.ToTensor(_pinv),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])]) # as per resnet18
 
@@ -536,7 +538,9 @@ class move_to_see:
                     pose_delta = pose_delta.reshape((6,))
 
                     # apply pose to robot in VREP
-                    self.interface.servoPoseEuler(pose_delta)
+                    # self.interface.servoPoseEuler(pose_delta)
+                    # self.interface.agent.set_joint_target_velocities(pose_delta)
+                    self.interface.servoRTB(pose_delta)
 
                     #add data to lists
                     ee_pose = self.interface.getCurrentPose()

@@ -60,6 +60,14 @@ from pyrep.errors import ConfigurationError, ConfigurationPathError, IKError
 
 from pyrep.robots.arms.arm import Arm
 
+# RTB Control Imports
+import roboticstoolbox as rtb 
+from spatialmath import SE3
+from numpy import pi
+from roboticstoolbox.backends.PyPlot import PyPlot
+import matplotlib.pyplot as plt
+import os
+import pickle
 
 class Harvey(Arm):
 
@@ -77,12 +85,16 @@ class pyrep_interface():
         #setup VREP connection
         print ('initialising sim')
         if(SCENE_FILE == None):
-            SCENE_FILE = join(dirname(abspath(__file__)), '../../vrep_scenes/PyRep_harvey.ttt')
+            # SCENE_FILE = join(dirname(abspath(__file__)), '../../vrep_scenes/PyRep_harvey_cocked_back.ttt')
+            # SCENE_FILE = join(dirname(abspath(__file__)), '../../vrep_scenes/PyRep_harvey_cocked_back_default.ttt')
+            SCENE_FILE = join(dirname(abspath(__file__)), '../../vrep_scenes/PyRep_harvey1.ttt')
 
         self.pr = PyRep()
         self.pr.launch(SCENE_FILE, headless=False)
         self.pr.start()
         self.agent = Harvey()
+        
+        # self.agent.set_ik_group_properties(resolution_method='pseudo_inverse')
 
         # self.starting_joint_positions = agent.get_joint_positions()
         # pos, quat = agent.get_tip().get_position(), agent.get_tip().get_quaternion()
@@ -132,7 +144,8 @@ class pyrep_interface():
 
         # self.starting_joint_positions = np.array([0.0,-360,-270-45,-90,-135,-90,90]);
         # self.starting_joint_positions = np.array([0.0,-360,-270-45,-90,-135,-90,90]);
-        self.starting_joint_positions = np.array([0.0,0,25,-100,75,90,0]);
+        # self.starting_joint_positions = np.array([0.0,0,25,-100,75,90,0]); # most recent
+        self.starting_joint_positions = np.rad2deg(self.agent.get_joint_positions())
 
         #internal memory for pixel info
         self.pixel_sizes = self.init_list_of_objects(number_of_cameras, 0)
@@ -153,6 +166,51 @@ class pyrep_interface():
         self.clock = pygame.time.Clock()
 
         self.screen.fill((255, 255, 255))
+        
+        
+        ## Harvey Model for RTB Control
+        self.lift_link = False # True: enables lift link (7dof); False: disables lift link (6dof, regular UR5)
+        # base transform
+        base_CS = self.agent.get_object('base_frame') # base frame for relative positions
+        b_pos_CS = base_CS.get_position()
+        b_rpy_CS = base_CS.get_orientation()
+
+        b_SE3_CS = SE3().Rx(b_rpy_CS[0])
+        b_SE3_CS = b_SE3_CS.Ry(b_rpy_CS[1])
+        b_SE3_CS = b_SE3_CS.Rz(b_rpy_CS[2], t=b_pos_CS)
+        # b_SE3_CS = SE3().Rx(b_rpy_CS[0]).Ry(b_rpy_CS[1]).Rz(b_rpy_CS[2], t=b_pos_CS)
+
+        # tool transform
+        tip_CS = self.agent.get_object('Harvey_tip') # base frame for relative positions
+        t_pos_CS = tip_CS.get_position(relative_to=self.agent.get_object('Harvey_joint7'))
+        t_rpy_CS = tip_CS.get_orientation(relative_to=self.agent.get_object('Harvey_joint7'))
+
+        t_SE3_CS = SE3().Rx(t_rpy_CS[0])
+        t_SE3_CS = t_SE3_CS.Ry(t_rpy_CS[1])
+        t_SE3_CS = t_SE3_CS.Rz(t_rpy_CS[2], t=t_pos_CS)
+        lift_pos_CS = self.agent.get_object('Harvey_joint1').get_position(relative_to=base_CS)
+        
+        a     = [ 0,         0,         -0.425,     -0.39225,    0,        0,       0] # [m]
+        d     = [ 0,         0.089159,   0,          0,          0.10915,  0.09465, 0.0823] # [m]
+        al    = [-pi/2,      pi/2,       0,          0,          pi/2,    -pi/2,    0] # [rad] '''pi/2'''
+        th    = np.zeros(7) # [rad]
+        ofs    = [lift_pos_CS[2], 0,     -pi/2,       0,         -pi/2,     0,       -pi/2] # offsets
+
+        # m[0] might not be right
+        m  	  = [0, 3.7, 8.393, 2.33, 1.219, 1.219, 0.1879] # mass (kg)
+        g     = [0, 0, 9.81] # gravity acting in Z
+        links = []
+        if self.lift_link: links.append(rtb.PrismaticDH(theta=th[0], a=a[0], alpha=al[0], m=m[0], offset=ofs[0], qlim=[-0.5, 0.5]))
+        [links.append(rtb.RevoluteDH(d=d[l], a=a[l], alpha=al[l], m=m[l], offset=ofs[l])) for l in range(1,7)]
+        self.H_rtb = rtb.DHRobot(links=links, name='UR5_harvey', manufacturer='Universal Robotics',
+                    base=b_SE3_CS, tool=t_SE3_CS)#b_mat)
+        
+        self.H_rtb.q = self.agent.get_joint_positions()[7-len(self.H_rtb.links):]
+        
+        self.env = PyPlot()
+        self.env.launch('3D Move to See')
+        self.env.add(self.H_rtb)
+        ## end RTB control model - see servoRTB function for use of the model
 
     def displayImage(self, image):
 
@@ -230,7 +288,7 @@ class pyrep_interface():
     def step_sim(self):
         self.pr.step()
 
-    def disconnect_sim():
+    def disconnect_sim(self):
         print("Closing connection to sim")
         self.pr.shutdown()
 
@@ -382,7 +440,7 @@ class pyrep_interface():
 
 
 
-    def servoPoseEuler(self, delta_pose):
+    def servoPoseEuler(self, delta_pose, plot=True):
         # start_pos, start_euler = self.agent.get_tip().get_position(relative_to=self.ref_camera), self.get_tip().get_orientation(relative_to=self.ref_camera)
         print("Servoing to Delta Pose")
         print(delta_pose)
@@ -393,6 +451,92 @@ class pyrep_interface():
         #once ik tarket set, grab pose relative to base frame
         pos_in_base_frame = self.agent._ik_target.get_position()
         euler_in_base_frame = self.agent._ik_target.get_orientation()
+        
+        ## PLOTTING - end effector position, joint velocities, manipulability
+        if plot:
+            try: self.dt
+            except AttributeError: 
+                self.dt = self.pr.get_simulation_timestep()
+            
+                self.t = [0]
+                self.q = self.agent.get_joint_positions()
+                self.m = [self.H_rtb.manipulability(q=self.H_rtb.q)] # initial manipulability
+                self.qd = self.agent.get_joint_velocities() # initial joint velocities
+                self.X = [self.agent.get_tip().get_position(relative_to=self.base_frame)] # initial position
+                
+            self.q = np.vstack((self.q, self.agent.get_joint_positions()))
+            self.qd = np.vstack((self.qd, self.agent.get_joint_velocities())) #self.agent.get_joint_velocities()[7-len(self.H_rtb.links):]))
+            self.t.append(self.t[-1]+self.dt) # expand time vector
+            self.m = np.vstack((self.m, self.H_rtb.manipulability(q=self.agent.get_joint_positions())))
+            self.X = np.vstack((self.X, self.agent.get_tip().get_position(relative_to=self.base_frame))) # defaults 2D array
+            
+            mqdflag = True
+            pflag = False
+            tflag = True
+            ptype = 'Singularity_6.5dof' # type of test being run
+            plotname = 'plots/CS_'+ptype # partial only
+            # Initialisation
+            try: self.firstrunplot
+            except AttributeError:
+                self.firstrunplot = True
+                
+                self.Xlabels = ["X (m)", "Y (m)", "Z (m)"]
+                self.jlabels = ["Joint {}".format(i) for i in np.arange(1,7+1)]  
+                
+                # manipulability, joint velocity init
+                if mqdflag:
+                    self.mqdfig, self.mqdax = plt.subplots(2)
+                    self.mqdfig.suptitle('Manipulability and Joint Velocity')
+                    self.mqdax[0].set_title('Manipulability and Joint Velocity')
+                    self.mqdax[1].sharex(self.mqdax[0]) # share axis
+
+                # XYZ position init
+                if pflag:
+                    self.pfig, self.pax = plt.subplots(3)
+                    self.pfig.suptitle('End Effector Position')
+                    self.pax[0].set_title('End Effector Position')
+                
+                # trajectory init
+                if tflag:
+                    self.tfig = plt.figure()
+                    self.tax = self.tfig.add_subplot(projection='3d')                
+                    self.tfig.suptitle('Trajectory')
+                    self.tax.set_title('Trajectory')
+                    self.fpos = self.capsicum.get_position(relative_to=self.base_frame)
+            
+            
+            # manipulability and qd plots update       
+            if mqdflag:
+                [self.mqdax[i].cla() for i in range(2)] # clear axes
+                self.mqdax[0].plot(self.t, self.m, label="Manipulability", linewidth=1.2) 
+                self.mqdax[1].plot(self.t, self.qd, label=self.jlabels, linewidth=1.2)
+                
+                self.mqdax[0].set(ylabel='Manipulability')
+                self.mqdax[1].set(xlabel='Time (s)', ylabel='Joint Velocity')
+                self.mqdax[1].legend(loc='upper right')
+                self.mqdfig.savefig(plotname+'_Manip.png', bbox_inches='tight', pad_inches=0.05)
+
+            # displacement plots update
+            if pflag:
+                [self.pax[i].cla() for i in range(3)] # clear axis
+                [self.pax[i].plot(self.t, self.X[:,i], color='red', label='Actual', linewidth=1.5) for i in range(3)] # position, joint labels
+                            
+                [self.pax[i].set(ylabel=self.Xlabels[i]) for i in range(3)]
+                self.pax[2].set(xlabel='Time (s)')
+                # self.pax.legend(loc='upper right')
+                self.pfig.savefig(plotname+'_Pos.png', bbox_inches='tight', pad_inches=0.05)
+            
+            # trajectory plot update
+            if tflag:
+                self.tax.cla()
+                self.tax.plot(self.X[:,0], self.X[:,1], self.X[:,2], color='red', label='Trajectory', linewidth=1.5)
+                self.tax.scatter(self.fpos[0], self.fpos[1], self.fpos[2], s=100, label='Target Capsicum')
+                self.tax.set_xlabel(self.Xlabels[0])
+                self.tax.set_ylabel(self.Xlabels[1])
+                self.tax.set_zlabel(self.Xlabels[2])
+                self.tax.legend(loc='upper right')
+                self.tfig.savefig(plotname+'_Traj.png', bbox_inches='tight', pad_inches=0.05)
+            plt.show()
 
         try:
             #finds ik solution relative to base frame
@@ -441,3 +585,180 @@ class pyrep_interface():
 
 
         return object_, segmentedImage
+  
+    
+    def servoRTB(self, delta_pose, ctrl='DLS', damping=1e-1, plot=True, save=False):
+        try: self.dt
+        except AttributeError: 
+            self.dt = self.pr.get_simulation_timestep()
+            
+            if plot or save:
+                self.t = [0]
+                self.m = [self.H_rtb.manipulability(q=self.H_rtb.q, J=self.H_rtb.jacob0(self.H_rtb.q))] # initial manipulability
+                self.qd = self.agent.get_joint_velocities()[7-len(self.H_rtb.links):]#[self.H_rtb.qd] # initial joint velocities
+                # self.X = [self.H_rtb.fkine(self.H_rtb.q).t] # initial position
+                self.X = [self.agent.get_tip().get_position(relative_to=self.base_frame)] # initial position
+                # self.X = [self.H_rtb.tool.t]
+            
+            print('Timestep is {}'.format(self.dt))
+        # replace H_CS with self.agent
+        # see line 540 RTBControl
+        print("Servoing to Delta Pose")
+        print(delta_pose)
+        delta_pose = delta_pose/self.dt # to make it a velocity in m/s # slightly slowed down
+        print("Modified Delta Pose:")
+        print(delta_pose)
+        # the actual movement function
+        self.H_rtb.q = self.agent.get_joint_positions()[7-len(self.H_rtb.links):]
+        
+        start = time.time()
+        J_rtb = self.H_rtb.jacobe(self.H_rtb.q) # jacobian rel to camera/EE
+        JT_rtb = np.transpose(J_rtb)
+                
+        if ctrl == 'JT': # JT Control (Kv = 30 is good)
+            # alpha = dot(e, J J^T e) / dot(J J^T e, J J^T e)
+            al = np.dot(delta_pose, J_rtb @ JT_rtb @ delta_pose) / np.dot(J_rtb @ JT_rtb @ delta_pose, J_rtb @ JT_rtb @ delta_pose)
+            # al = 0.5
+            self.H_rtb.qd = al*JT_rtb @ delta_pose
+            print("Alpha = %f" % al)
+            
+        # elif ctrl == 'Corke':
+        #     B = 0.5 # joint damping coefficient
+        #     T = SE3(delta_pose[0], delta_pose[1], delta_pose[2])
+        #     T = T.RPY(delta_pose[3], delta_pose[4], delta_pose[5])
+        #     dq = self.H_rtb.ikine_LM(T, q0=self.H_rtb.q)
+        #     fk = self.H_rtb.fkine(dq.q)
+        #     dp = np.hstack([fk.t, fk.rpy()])
+        #     self.H_rtb.qd = 1/B * JT_rtb @ dp
+            
+        elif ctrl == 'PINV': self.H_rtb.qd = np.linalg.pinv(J_rtb) @ delta_pose # PINV control
+        
+        elif ctrl == 'PINVNull': # PINV nullspace control - not very good
+            J_pinv =  np.linalg.pinv(J_rtb)
+            p = 1e-2
+            phi = np.ones(len(self.H_rtb.links))*p
+            I = len(self.H_rtb.links)            
+            self.H_rtb.qd = J_pinv @ delta_pose + (np.eye(I) - J_pinv @ J_rtb) @ phi 
+            
+        elif ctrl == 'DLS': # damped pseudoinverse - use this unless you're specifically trying to improve the others
+            lda0 = damping # lambda_0: max damping factor
+            wt = 0.01 # threshold manipulability (determined experimentally)
+            w = self.H_rtb.manipulability(q=self.H_rtb.q)
+            
+            if w < wt: lda = lda0*(1-(w/wt)) # manip under threshold: add scaling damping factor
+            else: lda = 0 # manipulability over threshold, no damping needed
+            
+            # lda = lda0 # testing - constant rather than adaptive damping
+            J_dpinv = JT_rtb @ np.linalg.inv(J_rtb @ JT_rtb + lda**2 * np.eye(6))
+            self.H_rtb.qd = J_dpinv @ delta_pose
+            
+        else: raise Exception("Invalid Control String - must be one of ['JT | 'PINV' | 'PINVNull' | 'DLS'] (use DLS if you are unsure)")
+        
+        ignore_lift = False # set this if you want the lift link included in calcs but never moving
+        if ignore_lift and self.lift_link: self.H_rtb.qd[0] = 0
+        if self.lift_link: self.agent.set_joint_target_velocities(self.H_rtb.qd) # set normally
+        else: self.agent.set_joint_target_velocities(np.hstack([0, self.H_rtb.qd])) # set lift link velocity to 0
+                
+        ## DATA - track position, velocity, manipulability over time
+        if plot or save:
+            self.t.append(self.t[-1]+self.dt) # expand time vector
+            self.m = np.vstack((self.m, self.H_rtb.manipulability(q=self.H_rtb.q)))
+            # self.X = np.vstack((self.X, self.H_rtb.fkine(self.H_rtb.q).t)) # defaults 2D array
+            self.X = np.vstack((self.X, self.agent.get_tip().get_position(relative_to=self.base_frame))) # defaults 2D array
+            # self.X = np.vstack((self.X, self.H_rtb.tool.t)) # defaults 2D array
+            self.qd = np.vstack((self.qd, self.H_rtb.qd)) #self.agent.get_joint_velocities()[7-len(self.H_rtb.links):]))
+            
+        ## FILE IO - save above data in a pickle file in the pickles directory
+        if save: 
+            ext = ".pkl"
+            contents = os.listdir(os.getcwd()+'/pickles') # get file list
+            files = [file for file in contents if file.endswith(ext)] # only get `.ext` files
+            if not files: curr = '1' # init file number (shouldn't trigger)
+            else: 
+                fnames = ['.'.join(file.split('.')[:-1]) for file in files] # remove extensions
+                nums = [int('_'.join(x.split('_')[len(x.split('_'))-1:])) for x in fnames] # get the digits at the end of the filenames
+                nums.sort()
+                curr = str(nums[-1]) # get current filenum (incremented in test_move_to_see_pyrep_singularity.py)
+            pname = 'pickles/test_' + curr + '.pkl' 
+            data = {
+                "t": self.t, 
+                "m": self.m,
+                "X": self.X,
+                "qd": self.qd
+                }
+            pickle.dump(data, open(pname, 'wb'))
+        
+        ## PLOTTING - end effector position, joint velocities, manipulability
+        if plot:
+            mqdflag = True
+            pflag = False
+            tflag = True
+            ptype = 'Singularity' # type of test being run
+            dof = str(len(self.H_rtb.links))+'dof'
+            if ignore_lift and self.lift_link: dof = '6.5dof'
+            plotname = 'plots/'+ctrl+'_'+ptype+'_'+dof # partial only
+            if ctrl == 'DLS': plotname = plotname + '_λ0=' + str(damping)
+            # Initialisation
+            try: self.firstrunplot
+            except AttributeError:
+                self.firstrunplot = True
+                
+                self.Xlabels = ["X (m)", "Y (m)", "Z (m)"]
+                self.jlabels = ["Joint {}".format(i) for i in np.arange(1,len(self.H_rtb.links)+1)]  
+                
+                # manipulability, joint velocity init
+                if mqdflag:
+                    self.mqdfig, self.mqdax = plt.subplots(2)
+                    self.mqdfig.suptitle('Manipulability and Joint Velocity')
+                    self.mqdax[0].set_title('Manipulability and Joint Velocity')
+                    self.mqdax[1].sharex(self.mqdax[0]) # share axis
+
+                # XYZ position init
+                if pflag:
+                    self.pfig, self.pax = plt.subplots(3)
+                    self.pfig.suptitle('End Effector Position')
+                    self.pax[0].set_title('End Effector Position')
+                
+                # trajectory init
+                if tflag:
+                    self.tfig = plt.figure()
+                    self.tax = self.tfig.add_subplot(projection='3d')                
+                    self.tfig.suptitle('Trajectory')
+                    self.tax.set_title('Trajectory')
+                    self.fpos = self.capsicum.get_position(relative_to=self.base_frame)
+            
+            
+            # manipulability and qd plots update       
+            if mqdflag:
+                [self.mqdax[i].cla() for i in range(2)] # clear axes
+                self.mqdax[0].plot(self.t, self.m, label="Manipulability", linewidth=1.2) 
+                self.mqdax[1].plot(self.t, self.qd, label=self.jlabels, linewidth=1.2)
+                
+                self.mqdax[0].set(ylabel='Manipulability')
+                self.mqdax[1].set(xlabel='Time (s)', ylabel='Joint Velocity')
+                self.mqdax[1].legend(loc='upper right')
+                self.mqdfig.savefig(plotname+'_Manip.png', bbox_inches='tight', pad_inches=0.05)
+
+            # displacement plots update
+            if pflag:
+                [self.pax[i].cla() for i in range(3)] # clear axis
+                # [self.pax[i].plot(self.t, self.X[:,i], label=self.Xlabels[i]) for i in range(3)] # position, joint labels
+                [self.pax[i].plot(self.t, self.X[:,i], color='red', label='Actual', linewidth=1.5) for i in range(3)] # position, joint labels
+                # [self.pax[i].plot(self.t, self.Xstar[:,i], color='blue', linestyle=(0, (5, 10)), label='Ideal', linewidth=1.5) for i in range(3)]
+            
+                [self.pax[i].set(ylabel=self.Xlabels[i]) for i in range(3)]
+                self.pax[2].set(xlabel='Time (s)')
+                # self.pax.legend(loc='upper right')
+                self.pfig.savefig(plotname+'_Pos.png', bbox_inches='tight', pad_inches=0.05)
+            
+            # trajectory plot update
+            if tflag:
+                self.tax.cla()
+                self.tax.plot(self.X[:,0], self.X[:,1], self.X[:,2], color='red', label='Trajectory', linewidth=1.5)
+                self.tax.scatter(self.fpos[0], self.fpos[1], self.fpos[2], s=100, label='Target Capsicum')
+                self.tax.set_xlabel(self.Xlabels[0])
+                self.tax.set_ylabel(self.Xlabels[1])
+                self.tax.set_zlabel(self.Xlabels[2])
+                self.tax.legend(loc='upper right')
+                self.tfig.savefig(plotname+'_Traj.png', bbox_inches='tight', pad_inches=0.05)
+            plt.show()
