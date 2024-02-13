@@ -36,7 +36,6 @@ import cv2
 
 from os.path import dirname, join, abspath
 from pyrep import PyRep
-from pyrep.robots.arms.harvey import Harvey
 from pyrep.objects.object import Object
 from pyrep.objects.dummy import Dummy
 from pyrep.objects.shape import Shape

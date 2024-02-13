@@ -48,7 +48,7 @@ import rospy
 import copy
 import tf
 import tf2_ros
-import harvey_msgs.srv
+#import harvey_msgs.srv
 import sensor_msgs
 
 from geometry_msgs.msg import Pose
@@ -163,20 +163,20 @@ class ros_interface:
         rospy.loginfo('Waiting for service %s to come online ...' % self.get_jacobian_service_name)
 
         try:
-            rospy.loginfo('Waiting for service %s to come online ...' % self.move_pose_service_name)
-            rospy.wait_for_service(self.move_pose_service_name)
-            self.move_pose_service = rospy.ServiceProxy(self.move_pose_service_name,harvey_msgs.srv.move_harvey_pose_array)
+            #rospy.loginfo('Waiting for service %s to come online ...' % self.move_pose_service_name)
+            #rospy.wait_for_service(self.move_pose_service_name)
+            #self.move_pose_service = rospy.ServiceProxy(self.move_pose_service_name,harvey_msgs.srv.move_harvey_pose_array)
             #self.move_pose_service = rospy.ServiceProxy(self.move_pose_service_name, harvey_msgs.srv.move_harvey_pose)
 
-            rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
-            rospy.wait_for_service(self.move_to_named_service_name)
-            self.move_named_service = rospy.ServiceProxy(self.move_to_named_service_name,
-                                        harvey_msgs.srv.move_harvey_named)
+            #rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
+            #rospy.wait_for_service(self.move_to_named_service_name)
+            #self.move_named_service = rospy.ServiceProxy(self.move_to_named_service_name,
+            #                            harvey_msgs.srv.move_harvey_named)
 
-            rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
-            rospy.wait_for_service(self.get_jacobian_service_name)
-            self.get_jacobian_service = rospy.ServiceProxy(self.get_jacobian_service_name,
-                                       harvey_msgs.srv.getJacobian)
+            #rospy.loginfo('Waiting for service %s to come online ...' % self.move_to_named_service_name)
+            #rospy.wait_for_service(self.get_jacobian_service_name)
+            #self.get_jacobian_service = rospy.ServiceProxy(self.get_jacobian_service_name,
+            #                           harvey_msgs.srv.getJacobian)
 
             self.joint_state_sub = rospy.Subscriber(self.joint_state_topic, JointState, self.joint_state_cb)
 
